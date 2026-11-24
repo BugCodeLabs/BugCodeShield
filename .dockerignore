@@ -1,0 +1,14 @@
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+apps
+docs
+scripts
+**/.next
+**/node_modules
+**/*.md
+**/*.log
+tmp
+.cursor
