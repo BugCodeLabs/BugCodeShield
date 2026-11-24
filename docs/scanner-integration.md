@@ -22,6 +22,6 @@ Unlike the CLI-only tools, SonarQube needs a server. Compose starts `sonarqube` 
 3. Runs `sonarsource/sonar-scanner-cli` with a per-scan project key.
 4. Waits for the compute-engine task, then pulls issues and security hotspots into the common finding model.
 
-Tick **SonarQube** on the project page; it is not selected by default. Give the server extra RAM (about 2 GB JVM). If the service is still starting, that scanner fails and the others still complete.
+Tick **SonarQube** on the project page; it is not selected by default. The scanner container gets 5 GB RAM so JS/TS analysis of large repos does not die on the Node heap. The server JVM is about 2.5 GB. First boot and large projects can take several minutes. If the service is still starting, that scanner fails and the others still complete.
 
 Test fixture: `testdata/vulnerable-sample` (unsafe-by-design demo app, not for deployment).

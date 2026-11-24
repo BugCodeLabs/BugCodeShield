@@ -61,12 +61,56 @@ function Scene() {
   );
 }
 
+const solutions = [
+  {
+    title: "Code check",
+    tools: "Semgrep · SonarQube",
+    text: "Static analysis of your source for insecure patterns, unsafe APIs, OWASP issues, bugs, and code smells — with file and line in the dashboard.",
+  },
+  {
+    title: "Vulnerability check",
+    tools: "Trivy · Dependency-Check",
+    text: "Find known CVEs in dependencies, lockfiles, and the filesystem. Optional OWASP Dependency-Check adds a slower, deeper SCA pass.",
+  },
+  {
+    title: "Security hotspot check",
+    tools: "SonarQube",
+    text: "Flag sensitive code paths (crypto, auth, injection sinks) that need a human review, not only confirmed vulnerabilities.",
+  },
+  {
+    title: "Secret leak check",
+    tools: "Gitleaks · Trivy",
+    text: "Detect API keys, tokens, and credentials in files. Values are redacted in logs and findings before they reach the UI.",
+  },
+  {
+    title: "Misconfiguration check",
+    tools: "Trivy",
+    text: "Scan IaC and config files for unsafe defaults, exposed services, and other misconfig next to the CVE results.",
+  },
+  {
+    title: "Dependency check",
+    tools: "Trivy · Dependency-Check",
+    text: "Inventory packages and report vulnerable versions, plus a fix version when the scanner knows one.",
+  },
+  {
+    title: "Quality and reliability check",
+    tools: "SonarQube",
+    text: "Bugs and maintainability findings from Community Build, imported into the same issue list as security results.",
+  },
+  {
+    title: "One review surface",
+    tools: "Dashboard",
+    text: "Live scanner logs, severity filters, JSON/SARIF export, and optional Ask AI. You pick which tools run on each scan.",
+  },
+];
+
 const scanners = [
   {
     name: "Semgrep",
     tag: "Code issues",
     title: "Catch insecure code as it is written",
     body: "SAST rules for OWASP, secrets, and language packs. File, line, and snippet in one view.",
+    checks: ["Code check", "OWASP SAST"],
     stat: "SAST",
     tone: "from-cyan-400/20 to-sky-950/40 border-cyan-400/30",
   },
@@ -75,6 +119,7 @@ const scanners = [
     tag: "CVEs & config",
     title: "Find reachable vulnerabilities and misconfig",
     body: "Filesystem, dependencies, and IaC in one pass. Results land next to Semgrep findings.",
+    checks: ["Vulnerability check", "Dependency check", "Misconfiguration check"],
     stat: "SCA",
     tone: "from-orange-400/20 to-amber-950/40 border-orange-400/30",
   },
@@ -83,6 +128,7 @@ const scanners = [
     tag: "Secrets",
     title: "Stop leaked keys before they ship",
     body: "Token and credential detection with redacted logs. Saved GitHub tokens stay encrypted.",
+    checks: ["Secret leak check"],
     stat: "Secrets",
     tone: "from-violet-400/20 to-indigo-950/40 border-violet-400/30",
   },
@@ -91,6 +137,7 @@ const scanners = [
     tag: "Quality + SAST",
     title: "Bugs, smells, and security hotspots",
     body: "Community Build analysis lands in the same issues list. Optional, like Dependency-Check.",
+    checks: ["Security hotspot check", "Code check", "Quality check"],
     stat: "Quality",
     tone: "from-emerald-400/20 to-teal-950/40 border-emerald-400/30",
   },
@@ -124,6 +171,7 @@ export function LandingPage() {
           <span className="text-lg font-semibold tracking-tight">BugCode Shield</span>
         </Link>
         <nav className="hidden items-center gap-8 text-sm text-[var(--muted)] md:flex">
+          <a href="#solutions" className="hover:text-[var(--foreground)]">Solutions</a>
           <a href="#scanners" className="hover:text-[var(--foreground)]">Scanners</a>
           <Link href="/guide" className="hover:text-[var(--foreground)]">How to use</Link>
           <Link href="/status" className="hover:text-[var(--foreground)]">Infrastructure</Link>
@@ -146,7 +194,7 @@ export function LandingPage() {
           </h1>
           <p className="mt-3 text-xl font-medium text-slate-200 sm:text-2xl">The all-in-one security scanner</p>
           <p className="mt-5 max-w-lg text-base leading-relaxed text-slate-300 sm:text-lg">
-            Run Semgrep, Trivy, Gitleaks, and optional SonarQube from one dashboard. Point BugCode Shield at a folder, ZIP, or GitHub repo — the project is scanned in place, not uploaded as a full codebase.
+            Code check, vulnerability check, security hotspot check, secret leak check, and more — from Semgrep, Trivy, Gitleaks, and optional SonarQube in one dashboard. Point it at a folder, ZIP, or GitHub repo; the project is scanned in place.
           </p>
           <form className="mt-8 flex max-w-md flex-col gap-3 sm:flex-row" onSubmit={onStart}>
             <input
@@ -179,7 +227,25 @@ export function LandingPage() {
         </div>
       </section>
 
+      <section id="solutions" className="relative z-10 mx-auto max-w-6xl px-6 pb-16">
+        <p className="text-sm uppercase tracking-[0.22em] text-cyan-300/80">Solutions</p>
+        <h2 className="mt-3 max-w-3xl text-3xl font-semibold text-white sm:text-4xl">What this site checks</h2>
+        <p className="mt-3 max-w-2xl text-slate-300">
+          Each check is backed by the scanners above. You enable the tools you want; findings land in one issues list.
+        </p>
+        <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {solutions.map((item) => (
+            <article key={item.title} className="rounded-2xl border border-white/10 bg-[#0b1220]/80 p-5">
+              <h3 className="text-lg font-medium text-white">{item.title}</h3>
+              <p className="mt-2 text-xs font-medium uppercase tracking-wider text-cyan-300/80">{item.tools}</p>
+              <p className="mt-3 text-sm leading-relaxed text-slate-400">{item.text}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
       <section id="scanners" className="relative z-10 mx-auto max-w-6xl px-6 pb-20">
+        <p className="mb-6 text-sm uppercase tracking-[0.22em] text-cyan-300/80">Scanners</p>
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           {scanners.map((item) => (
             <article
@@ -189,6 +255,11 @@ export function LandingPage() {
               <p className="text-xs font-semibold uppercase tracking-wider text-white/70">{item.tag}</p>
               <h2 className="mt-4 text-2xl font-semibold text-white">{item.title}</h2>
               <p className="mt-3 text-sm leading-relaxed text-slate-300">{item.body}</p>
+              <ul className="mt-4 space-y-1 text-xs text-white/75">
+                {item.checks.map((check) => (
+                  <li key={check}>· {check}</li>
+                ))}
+              </ul>
               <div className="mt-8 flex items-end justify-between">
                 <p className="text-4xl font-semibold text-white">{item.stat}</p>
                 <p className="text-sm font-medium text-white/80">{item.name}</p>
@@ -224,6 +295,7 @@ export function LandingPage() {
         <div className="mx-auto flex max-w-6xl flex-col gap-4 px-6 py-8 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
           <p>BugCode Shield · local security scanning</p>
           <div className="flex gap-5">
+            <Link href="/#solutions" className="hover:text-slate-200">Solutions</Link>
             <Link href="/guide" className="hover:text-slate-200">How to use</Link>
             <Link href="/login" className="hover:text-slate-200">Sign in</Link>
             <Link href="/register" className="hover:text-slate-200">Get started</Link>

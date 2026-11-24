@@ -171,10 +171,11 @@ func (r *Runner) collectSonarQube(ctx context.Context, scanID, localOut string) 
 	}
 	key := sonarProjectKey(scanID)
 	taskID := readReportTask(filepath.Join(localOut, "report-task.txt"))
-	if taskID != "" {
-		if err := r.waitComputeEngine(ctx, token, taskID); err != nil {
-			return nil, err
-		}
+	if taskID == "" {
+		return nil, fmt.Errorf("sonar-scanner did not finish analysis")
+	}
+	if err := r.waitComputeEngine(ctx, token, taskID); err != nil {
+		return nil, err
 	}
 	var last []byte
 	for attempt := 0; attempt < 4; attempt++ {
@@ -191,7 +192,7 @@ func (r *Runner) collectSonarQube(ctx context.Context, scanID, localOut string) 
 		}
 		hotspots, err := r.fetchSonarHotspots(ctx, token, key)
 		if err != nil {
-			return nil, err
+			hotspots = nil
 		}
 		out, err := json.Marshal(map[string]any{"issues": issues, "hotspots": hotspots})
 		if err != nil {
@@ -260,9 +261,9 @@ func (r *Runner) fetchSonarIssues(ctx context.Context, token, projectKey string)
 	out := make([]json.RawMessage, 0)
 	for page := 1; page <= 20; page++ {
 		q := url.Values{
-			"componentKeys": {projectKey},
-			"ps":            {"500"},
-			"p":             {fmt.Sprintf("%d", page)},
+			"components": {projectKey},
+			"ps":         {"500"},
+			"p":          {fmt.Sprintf("%d", page)},
 		}.Encode()
 		body, status, err := r.sonarDo(ctx, http.MethodGet, "/api/issues/search", q, "", "", token)
 		if err != nil {
@@ -292,15 +293,15 @@ func (r *Runner) fetchSonarHotspots(ctx context.Context, token, projectKey strin
 	out := make([]json.RawMessage, 0)
 	for page := 1; page <= 20; page++ {
 		q := url.Values{
-			"projectKey": {projectKey},
-			"ps":         {"500"},
-			"p":          {fmt.Sprintf("%d", page)},
+			"project": {projectKey},
+			"ps":      {"500"},
+			"p":       {fmt.Sprintf("%d", page)},
 		}.Encode()
 		body, status, err := r.sonarDo(ctx, http.MethodGet, "/api/hotspots/search", q, "", "", token)
 		if err != nil {
 			return nil, err
 		}
-		if status == http.StatusNotFound {
+		if status == http.StatusNotFound || status == http.StatusBadRequest {
 			return out, nil
 		}
 		if status >= 300 {

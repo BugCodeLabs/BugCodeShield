@@ -82,6 +82,22 @@ func TestSanitizeScannerLogStripsANSI(t *testing.T) {
 	}
 }
 
+func TestSanitizeScannerLogKeepsErrors(t *testing.T) {
+	var b strings.Builder
+	for i := 0; i < 80; i++ {
+		b.WriteString("INFO startup line\n")
+	}
+	b.WriteString("ERROR The analysis will stop due to the Node.js process running out of memory\n")
+	b.WriteString("INFO EXECUTION FAILURE\n")
+	got := sanitizeScannerLog(b.String())
+	if !strings.Contains(got, "Node.js process running out of memory") {
+		t.Fatalf("error dropped from %q", got)
+	}
+	if !strings.Contains(got, "EXECUTION FAILURE") {
+		t.Fatalf("failure dropped from %q", got)
+	}
+}
+
 func TestSonarProjectKey(t *testing.T) {
 	if got := sonarProjectKey("abc-def"); got != "bcs-abcdef" {
 		t.Fatalf("got %q", got)

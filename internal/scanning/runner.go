@@ -35,13 +35,17 @@ type Runner struct {
 }
 
 func (r *Runner) Run(ctx context.Context, scanner, scanID, hostSrc, hostOut, localOut string) RunResult {
-	if r.Timeout == 0 {
-		r.Timeout = 15 * time.Minute
+	timeout := r.Timeout
+	if timeout == 0 {
+		timeout = 15 * time.Minute
+	}
+	if scanner == "sonarqube" && timeout < 25*time.Minute {
+		timeout = 25 * time.Minute
 	}
 	if localOut == "" {
 		localOut = hostOut
 	}
-	ctx, cancel := context.WithTimeout(ctx, r.Timeout)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	_ = os.MkdirAll(localOut, 0o777)
 	_ = os.Chmod(localOut, 0o777)
@@ -61,18 +65,18 @@ func (r *Runner) Run(ctx context.Context, scanner, scanID, hostSrc, hostOut, loc
 	name := fmt.Sprintf("bugcodeshield-%s-%s", scanner, shortID)
 	ensureImage(ctx, image)
 
-	memory, pids := "1536m", "256"
+	memory, cpus, pids, tmpfs := "1536m", "1", "256", "2g"
 	if scanner == "sonarqube" {
-		memory, pids = "2g", "512"
+		memory, cpus, pids, tmpfs = "5g", "2", "2048", "4g"
 	}
 
 	dockerArgs := []string{
 		"run", "--rm",
 		"--name", name,
 		"--memory", memory,
-		"--cpus", "1",
+		"--cpus", cpus,
 		"--pids-limit", pids,
-		"--tmpfs", "/tmp:rw,exec,nosuid,size=2g",
+		"--tmpfs", "/tmp:rw,exec,nosuid,size=" + tmpfs,
 		"--cap-drop", "ALL",
 		"--security-opt", "no-new-privileges",
 		"-v", hostSrc + ":/src:ro",
@@ -96,6 +100,7 @@ func (r *Runner) Run(ctx context.Context, scanner, scanID, hostSrc, hostOut, loc
 			"-e", "SONAR_HOST_URL="+strings.TrimRight(r.SonarURL, "/"),
 			"-e", "SONAR_TOKEN="+token,
 			"-e", "SONAR_USER_HOME=/tmp/.sonar",
+			"-e", "SONAR_SCANNER_OPTS=-Xmx1024m",
 		)
 	}
 	network := r.Network
@@ -116,11 +121,11 @@ func (r *Runner) Run(ctx context.Context, scanner, scanID, hostSrc, hostOut, loc
 	}
 	if scanner == "sonarqube" {
 		report, collectErr := r.collectSonarQube(ctx, scanID, localOut)
-		if len(report) > 0 {
+		if collectErr == nil && len(report) > 0 {
 			res.Output = report
 			_ = os.WriteFile(filepath.Join(localOut, "sonarqube.json"), report, 0o644)
 			res.Err = nil
-		} else if collectErr != nil {
+		} else if res.Err == nil && collectErr != nil {
 			res.Err = fmt.Errorf("%s failed: %w", scanner, collectErr)
 		}
 	} else {
@@ -136,7 +141,7 @@ func (r *Runner) Run(ctx context.Context, scanner, scanID, hostSrc, hostOut, loc
 		res.Err = nil
 	}
 	if res.Err != nil && len(res.Output) == 0 && err != nil {
-		res.Err = fmt.Errorf("%s failed: %w: %s", scanner, err, truncate(string(combined), 500))
+		res.Err = fmt.Errorf("%s failed: %w: %s", scanner, err, truncateTail(string(combined), 800))
 	}
 	return res
 }
@@ -214,11 +219,14 @@ func commandFor(scanner, scanID string) (image string, args []string) {
 			"-Dsonar.projectName=" + key,
 			"-Dsonar.projectBaseDir=/src",
 			"-Dsonar.sources=.",
-			"-Dsonar.working.directory=/tmp/.scannerwork",
+			"-Dsonar.tests=.",
 			"-Dsonar.scm.disabled=true",
 			"-Dsonar.qualitygate.wait=false",
+			"-Dsonar.javascript.node.maxspace=4096",
 			"-Dsonar.scanner.metadataFilePath=/out/report-task.txt",
-			"-Dsonar.exclusions=**/node_modules/**,**/.git/**,**/dist/**,**/build/**,**/vendor/**,**/.next/**,**/coverage/**,**/target/**,**/__pycache__/**,**/venv/**,**/.venv/**",
+			"-Dsonar.exclusions=**/node_modules/**,**/.git/**,**/dist/**,**/build/**,**/vendor/**,**/.next/**,**/coverage/**,**/target/**,**/__pycache__/**,**/venv/**,**/.venv/**,**/.nx/**,**/tmp/**,**/.husky/**,**/*.min.js,**/*.spec.ts,**/*.spec.tsx,**/*.spec.js,**/*.test.ts,**/*.test.tsx,**/*.test.js,**/*-e2e/**,**/e2e/**",
+			"-Dsonar.test.inclusions=**/*.spec.ts,**/*.spec.tsx,**/*.spec.js,**/*.test.ts,**/*.test.tsx,**/*.test.js,**/*-e2e/**,**/e2e/**",
+			"-Dsonar.test.exclusions=**/node_modules/**,**/.git/**,**/dist/**",
 		}
 	default:
 		return "", nil
@@ -293,24 +301,44 @@ func truncate(s string, n int) string {
 	return s[:n]
 }
 
+func truncateTail(s string, n int) string {
+	s = strings.TrimSpace(s)
+	if len(s) <= n {
+		return s
+	}
+	return "…" + s[len(s)-n:]
+}
+
 var ansiEscape = regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z]`)
 
 func sanitizeScannerLog(s string) string {
 	s = ansiEscape.ReplaceAllString(s, "")
-	var kept []string
+	var lines []string
 	for _, line := range strings.Split(s, "\n") {
 		lower := strings.ToLower(line)
-		if strings.Contains(lower, "secret:") || strings.Contains(lower, "x-access-token:") {
+		if strings.Contains(lower, "secret:") || strings.Contains(lower, "x-access-token:") || strings.Contains(lower, "sonar.token=") {
 			continue
 		}
 		line = strings.TrimRight(line, "\r")
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		kept = append(kept, line)
-		if len(kept) > 40 {
-			break
+		lines = append(lines, line)
+	}
+	var kept []string
+	for _, line := range lines {
+		upper := strings.ToUpper(line)
+		if strings.Contains(upper, " ERROR") || strings.Contains(upper, "ERROR ") || strings.Contains(upper, "EXCEPTION") || strings.Contains(upper, "EXECUTION FAILURE") {
+			kept = append(kept, line)
 		}
 	}
-	return truncate(strings.Join(kept, "\n"), 1500)
+	start := len(lines) - 25
+	if start < 0 {
+		start = 0
+	}
+	kept = append(kept, lines[start:]...)
+	if len(kept) > 50 {
+		kept = kept[len(kept)-50:]
+	}
+	return truncate(strings.Join(kept, "\n"), 2500)
 }

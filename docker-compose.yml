@@ -237,8 +237,8 @@ services:
     restart: unless-stopped
     environment:
       SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: "true"
-      SONAR_WEB_JAVAOPTS: "-Xmx512m -Xms128m"
-      SONAR_CE_JAVAOPTS: "-Xmx512m -Xms128m"
+      SONAR_WEB_JAVAOPTS: "-Xmx768m -Xms128m"
+      SONAR_CE_JAVAOPTS: "-Xmx1024m -Xms256m"
       SONAR_SEARCH_JAVAOPTS: "-Xmx768m -Xms256m -XX:MaxDirectMemorySize=256m"
     volumes:
       - sonarqube_data:/opt/sonarqube/data
