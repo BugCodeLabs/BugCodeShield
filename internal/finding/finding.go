@@ -21,24 +21,25 @@ import (
 )
 
 type Finding struct {
-	ID           string          `json:"id"`
-	ScanID       string          `json:"scan_id"`
-	ProjectID    string          `json:"project_id"`
-	Scanner      string          `json:"scanner"`
-	RuleID       string          `json:"rule_id"`
-	Title        string          `json:"title"`
-	Description  string          `json:"description"`
-	Severity     string          `json:"severity"`
-	CWE          *string         `json:"cwe,omitempty"`
-	CVE          *string         `json:"cve,omitempty"`
-	FilePath     *string         `json:"file_path,omitempty"`
-	StartLine    *int            `json:"start_line,omitempty"`
-	EndLine      *int            `json:"end_line,omitempty"`
-	Snippet      *string         `json:"snippet,omitempty"`
-	Remediation  *string         `json:"remediation,omitempty"`
-	Fingerprint  string          `json:"fingerprint"`
-	DetectedAt   time.Time       `json:"detected_at"`
-	Raw          json.RawMessage `json:"-"`
+	ID          string          `json:"id"`
+	ScanID      string          `json:"scan_id"`
+	ProjectID   string          `json:"project_id"`
+	Scanner     string          `json:"scanner"`
+	RuleID      string          `json:"rule_id"`
+	Title       string          `json:"title"`
+	Description string          `json:"description"`
+	Severity    string          `json:"severity"`
+	Category    string          `json:"category"`
+	CWE         *string         `json:"cwe,omitempty"`
+	CVE         *string         `json:"cve,omitempty"`
+	FilePath    *string         `json:"file_path,omitempty"`
+	StartLine   *int            `json:"start_line,omitempty"`
+	EndLine     *int            `json:"end_line,omitempty"`
+	Snippet     *string         `json:"snippet,omitempty"`
+	Remediation *string         `json:"remediation,omitempty"`
+	Fingerprint string          `json:"fingerprint"`
+	DetectedAt  time.Time       `json:"detected_at"`
+	Raw         json.RawMessage `json:"-"`
 }
 
 type Service struct {
@@ -60,6 +61,7 @@ func (s *Service) InsertAll(ctx context.Context, items []Finding) error {
 		if len(item.Raw) == 0 {
 			item.Raw = json.RawMessage(`{}`)
 		}
+		item.EnsureCategory()
 		if item.Fingerprint == "" {
 			line := 0
 			if item.StartLine != nil {
@@ -73,11 +75,11 @@ func (s *Service) InsertAll(ctx context.Context, items []Finding) error {
 		}
 		_, err := s.pool.Exec(ctx, `
 			INSERT INTO findings (
-				scan_id, project_id, scanner, rule_id, title, description, severity, cwe, cve,
+				scan_id, project_id, scanner, rule_id, title, description, severity, category, cwe, cve,
 				file_path, start_line, end_line, snippet, remediation, fingerprint, raw
-			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
 			ON CONFLICT (scan_id, fingerprint) DO NOTHING
-		`, item.ScanID, item.ProjectID, item.Scanner, item.RuleID, item.Title, item.Description, item.Severity,
+		`, item.ScanID, item.ProjectID, item.Scanner, item.RuleID, item.Title, item.Description, item.Severity, item.Category,
 			item.CWE, item.CVE, item.FilePath, item.StartLine, item.EndLine, item.Snippet, item.Remediation, item.Fingerprint, item.Raw)
 		if err != nil {
 			return err
@@ -98,22 +100,32 @@ func (s *Service) List(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	severity := strings.ToLower(strings.TrimSpace(q.Get("severity")))
 	scanner := strings.ToLower(strings.TrimSpace(q.Get("scanner")))
+	category := NormalizeCategory(q.Get("category"))
 	file := strings.TrimSpace(q.Get("file"))
 	search := strings.TrimSpace(q.Get("q"))
 
 	rows, err := s.pool.Query(r.Context(), `
-		SELECT id::text, scan_id::text, project_id::text, scanner, rule_id, title, description, severity, cwe, cve,
+		SELECT id::text, scan_id::text, project_id::text, scanner, rule_id, title, description, severity, category, cwe, cve,
 		       file_path, start_line, end_line, snippet, remediation, fingerprint, detected_at
 		FROM findings
 		WHERE scan_id=$1
 		  AND ($2='' OR severity=$2)
 		  AND ($3='' OR scanner=$3)
-		  AND ($4='' OR file_path ILIKE '%'||$4||'%')
-		  AND ($5='' OR title ILIKE '%'||$5||'%' OR description ILIKE '%'||$5||'%' OR rule_id ILIKE '%'||$5||'%')
+		  AND ($4='' OR category=$4)
+		  AND ($5='' OR file_path ILIKE '%'||$5||'%')
+		  AND ($6='' OR title ILIKE '%'||$6||'%' OR description ILIKE '%'||$6||'%' OR rule_id ILIKE '%'||$6||'%')
 		ORDER BY
+		  CASE category
+		    WHEN 'security_hotspot' THEN 1
+		    WHEN 'vulnerability' THEN 2
+		    WHEN 'infrastructure' THEN 3
+		    WHEN 'secret_leak' THEN 4
+		    WHEN 'duplication' THEN 5
+		    ELSE 6
+		  END,
 		  CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 ELSE 5 END,
 		  file_path, start_line
-	`, scanID, severity, scanner, file, search)
+	`, scanID, severity, scanner, category, file, search)
 	if err != nil {
 		httputil.Error(w, http.StatusInternalServerError, "internal", "Internal server error")
 		return
@@ -122,10 +134,11 @@ func (s *Service) List(w http.ResponseWriter, r *http.Request) {
 	items := make([]Finding, 0)
 	for rows.Next() {
 		var f Finding
-		if err := rows.Scan(&f.ID, &f.ScanID, &f.ProjectID, &f.Scanner, &f.RuleID, &f.Title, &f.Description, &f.Severity, &f.CWE, &f.CVE, &f.FilePath, &f.StartLine, &f.EndLine, &f.Snippet, &f.Remediation, &f.Fingerprint, &f.DetectedAt); err != nil {
+		if err := rows.Scan(&f.ID, &f.ScanID, &f.ProjectID, &f.Scanner, &f.RuleID, &f.Title, &f.Description, &f.Severity, &f.Category, &f.CWE, &f.CVE, &f.FilePath, &f.StartLine, &f.EndLine, &f.Snippet, &f.Remediation, &f.Fingerprint, &f.DetectedAt); err != nil {
 			httputil.Error(w, http.StatusInternalServerError, "internal", "Internal server error")
 			return
 		}
+		f.EnsureCategory()
 		items = append(items, f)
 	}
 	httputil.JSON(w, http.StatusOK, map[string]any{"findings": items, "count": len(items)})
@@ -177,7 +190,7 @@ func (s *Service) export(w http.ResponseWriter, r *http.Request, format string) 
 		return
 	}
 	rows, err := s.pool.Query(r.Context(), `
-		SELECT id::text, scanner, rule_id, title, description, severity, cwe, cve, file_path, start_line, end_line, remediation
+		SELECT id::text, scanner, rule_id, title, description, severity, category, cwe, cve, file_path, start_line, end_line, remediation
 		FROM findings WHERE scan_id=$1
 	`, scanID)
 	if err != nil {
@@ -186,17 +199,20 @@ func (s *Service) export(w http.ResponseWriter, r *http.Request, format string) 
 	}
 	defer rows.Close()
 	type exportRow struct {
-		ID, Scanner, RuleID, Title, Description, Severity string
-		CWE, CVE, FilePath, Remediation                   *string
-		StartLine, EndLine                                *int
+		ID, Scanner, RuleID, Title, Description, Severity, Category string
+		CWE, CVE, FilePath, Remediation                             *string
+		StartLine, EndLine                                          *int
 	}
 	items := make([]exportRow, 0)
 	for rows.Next() {
 		var item exportRow
-		if err := rows.Scan(&item.ID, &item.Scanner, &item.RuleID, &item.Title, &item.Description, &item.Severity, &item.CWE, &item.CVE, &item.FilePath, &item.StartLine, &item.EndLine, &item.Remediation); err != nil {
+		if err := rows.Scan(&item.ID, &item.Scanner, &item.RuleID, &item.Title, &item.Description, &item.Severity, &item.Category, &item.CWE, &item.CVE, &item.FilePath, &item.StartLine, &item.EndLine, &item.Remediation); err != nil {
 			httputil.Error(w, http.StatusInternalServerError, "internal", "Internal server error")
 			return
 		}
+		tmp := Finding{Scanner: item.Scanner, RuleID: item.RuleID, Title: item.Title, Description: item.Description, Category: item.Category, CVE: item.CVE, Remediation: item.Remediation}
+		tmp.EnsureCategory()
+		item.Category = tmp.Category
 		items = append(items, item)
 	}
 	if format == "sarif" {
@@ -263,10 +279,10 @@ func (s *Service) Get(ctx context.Context, userID, findingID string) (Finding, e
 	var f Finding
 	var projectID string
 	err := s.pool.QueryRow(ctx, `
-		SELECT id::text, scan_id::text, project_id::text, scanner, rule_id, title, description, severity, cwe, cve,
+		SELECT id::text, scan_id::text, project_id::text, scanner, rule_id, title, description, severity, category, cwe, cve,
 		       file_path, start_line, end_line, snippet, remediation, fingerprint, detected_at
 		FROM findings WHERE id=$1
-	`, findingID).Scan(&f.ID, &f.ScanID, &f.ProjectID, &f.Scanner, &f.RuleID, &f.Title, &f.Description, &f.Severity, &f.CWE, &f.CVE, &f.FilePath, &f.StartLine, &f.EndLine, &f.Snippet, &f.Remediation, &f.Fingerprint, &f.DetectedAt)
+	`, findingID).Scan(&f.ID, &f.ScanID, &f.ProjectID, &f.Scanner, &f.RuleID, &f.Title, &f.Description, &f.Severity, &f.Category, &f.CWE, &f.CVE, &f.FilePath, &f.StartLine, &f.EndLine, &f.Snippet, &f.Remediation, &f.Fingerprint, &f.DetectedAt)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return Finding{}, httputil.ErrNotFound
@@ -277,5 +293,6 @@ func (s *Service) Get(ctx context.Context, userID, findingID string) (Finding, e
 	if _, err := s.orgs.RequireProjectAccess(ctx, userID, projectID, false); err != nil {
 		return Finding{}, err
 	}
+	f.EnsureCategory()
 	return f, nil
 }

@@ -92,7 +92,7 @@ Each selected scanner is `docker run --rm` with:
 - `--cap-drop ALL` and `no-new-privileges`
 - No Docker socket
 
-The worker reads `semgrep.json` / `trivy.json` / `gitleaks.json` / `sonarqube.json`, parses them, and inserts `findings`. One scanner failing does not cancel the others.
+The worker reads `semgrep.json` / `trivy.json` / `gitleaks.json` / `sonarqube.json`, parses them, and inserts `findings` with a category (`security_hotspot`, `vulnerability`, `infrastructure`, `secret_leak`, `duplication`, `code_quality`). One scanner failing does not cancel the others. Semgrep, Trivy, Gitleaks, and Dependency-Check run at the same time (separate `/out/{scanner}` dirs). SonarQube starts after that wave so the 5 GB scanner does not overlap the CLIs.
 
 ## Desktop
 

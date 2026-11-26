@@ -2,7 +2,7 @@
 
 Enabled by default: Semgrep, Trivy, Gitleaks. Optional: SonarQube, OWASP Dependency-Check.
 
-The worker starts each scanner with `docker run`:
+The worker starts each scanner with `docker run`. Semgrep, Trivy, Gitleaks, and Dependency-Check run together; SonarQube starts after that wave:
 
 - Read-only source mount
 - Memory, CPU, and PID limits

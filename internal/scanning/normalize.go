@@ -2,6 +2,7 @@ package scanning
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 
 	"bugcode-shield/internal/finding"
@@ -78,6 +79,12 @@ func ParseSemgrep(scanID, projectID string, raw []byte) []finding.Finding {
 			Remediation: ptr("Review this code path and apply the secure alternative recommended by the Semgrep rule. Avoid untrusted input in dangerous sinks."),
 			Raw:         json.RawMessage(`{}`),
 		}
+		item.Category = finding.Classify(finding.ClassifyInput{
+			Scanner:     item.Scanner,
+			RuleID:      item.RuleID,
+			Title:       item.Title,
+			Description: item.Description,
+		})
 		if cwe != "" {
 			item.CWE = ptr(cwe)
 		}
@@ -142,6 +149,7 @@ func ParseTrivy(scanID, projectID string, raw []byte) []finding.Finding {
 				Title:       title,
 				Description: strings.TrimSpace(v.PkgName + " " + v.InstalledVersion + " " + v.Description),
 				Severity:    mapSeverity(v.Severity),
+				Category:    finding.CategoryVulnerability,
 				CVE:         ptr(v.VulnerabilityID),
 				FilePath:    ptr(result.Target),
 				Remediation: ptr(rem),
@@ -158,6 +166,7 @@ func ParseTrivy(scanID, projectID string, raw []byte) []finding.Finding {
 				Title:       m.Title,
 				Description: m.Description + " " + m.Message,
 				Severity:    mapSeverity(m.Severity),
+				Category:    finding.CategoryInfrastructure,
 				FilePath:    ptr(result.Target),
 				Remediation: ptr(m.Resolution),
 			}
@@ -177,6 +186,7 @@ func ParseTrivy(scanID, projectID string, raw []byte) []finding.Finding {
 				Title:       title,
 				Description: "Potential secret detected by Trivy. Rotate it if it is real; the value is redacted in BugCode Shield.",
 				Severity:    mapSeverity(sec.Severity),
+				Category:    finding.CategorySecretLeak,
 				FilePath:    ptr(result.Target),
 				Snippet:     ptr(redactSecret(sec.Match)),
 				Remediation: ptr("Remove the secret from source, rotate it, and load it from a secret manager."),
@@ -230,6 +240,7 @@ func ParseGitleaks(scanID, projectID string, raw []byte) []finding.Finding {
 			Title:       leak.Description,
 			Description: "Potential secret detected. The value is redacted in BugCode Shield and should be rotated if it is real.",
 			Severity:    "high",
+			Category:    finding.CategorySecretLeak,
 			FilePath:    ptr(path),
 			StartLine:   ptr(leak.StartLine),
 			EndLine:     ptr(leak.EndLine),
@@ -269,6 +280,7 @@ func ParseDependencyCheck(scanID, projectID string, raw []byte) []finding.Findin
 				Title:       v.Name + " in " + dep.FileName,
 				Description: v.Description,
 				Severity:    mapSeverity(v.Severity),
+				Category:    finding.CategoryVulnerability,
 				FilePath:    ptr(dep.FilePath),
 				Remediation: ptr("Upgrade the dependency to a non-vulnerable version and regenerate the lockfile."),
 			}
@@ -317,6 +329,15 @@ func ParseSonarQube(scanID, projectID string, raw []byte) []finding.Finding {
 			Message                  string `json:"message"`
 			RuleKey                  string `json:"ruleKey"`
 		} `json:"hotspots"`
+		Duplications []struct {
+			Key      string `json:"key"`
+			Path     string `json:"path"`
+			Language string `json:"language"`
+			Measures []struct {
+				Metric string `json:"metric"`
+				Value  string `json:"value"`
+			} `json:"measures"`
+		} `json:"duplications"`
 	}
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		return nil
@@ -345,6 +366,13 @@ func ParseSonarQube(scanID, projectID string, raw []byte) []finding.Finding {
 			Title:       rule,
 			Description: issue.Message,
 			Severity:    sonarIssueSeverity(issue.Severity, issue.Type, issue.Impacts),
+			Category: finding.Classify(finding.ClassifyInput{
+				Scanner:     "sonarqube",
+				RuleID:      rule,
+				Title:       rule,
+				Description: issue.Message,
+				IssueType:   issue.Type,
+			}),
 			FilePath:    ptr(path),
 			Remediation: ptr(sonarRemediation(issue.Type)),
 		}
@@ -374,6 +402,7 @@ func ParseSonarQube(scanID, projectID string, raw []byte) []finding.Finding {
 			Title:       rule,
 			Description: hs.Message,
 			Severity:    mapSeverity(hs.VulnerabilityProbability),
+			Category:    finding.CategorySecurityHotspot,
 			FilePath:    ptr(path),
 			Remediation: ptr(sonarRemediation("SECURITY_HOTSPOT")),
 		}
@@ -382,6 +411,48 @@ func ParseSonarQube(scanID, projectID string, raw []byte) []finding.Finding {
 			item.EndLine = ptr(hs.Line)
 		}
 		item.Fingerprint = finding.Fingerprint(item.Scanner, item.RuleID, path, hs.Line)
+		out = append(out, item)
+	}
+	for _, dup := range doc.Duplications {
+		path := strings.TrimSpace(dup.Path)
+		if path == "" {
+			path = sonarFilePath(dup.Key, "")
+		}
+		blocks, lines, density := sonarDuplicationMeasures(dup.Measures)
+		if blocks <= 0 && lines <= 0 {
+			continue
+		}
+		desc := "Duplicated code detected by SonarQube."
+		if blocks > 0 {
+			desc += " " + strconv.Itoa(blocks) + " duplicated block"
+			if blocks != 1 {
+				desc += "s"
+			}
+			desc += "."
+		}
+		if lines > 0 {
+			desc += " " + strconv.Itoa(lines) + " duplicated line"
+			if lines != 1 {
+				desc += "s"
+			}
+			desc += "."
+		}
+		if density != "" {
+			desc += " Density " + density + "%."
+		}
+		item := finding.Finding{
+			ScanID:      scanID,
+			ProjectID:   projectID,
+			Scanner:     "sonarqube",
+			RuleID:      "sonarqube:duplication",
+			Title:       "Duplicated code",
+			Description: desc,
+			Severity:    "medium",
+			Category:    finding.CategoryDuplication,
+			FilePath:    ptr(path),
+			Remediation: ptr("Extract the shared logic into one function or module so the duplicated blocks can be removed."),
+		}
+		item.Fingerprint = finding.Fingerprint(item.Scanner, item.RuleID, path, 0)
 		out = append(out, item)
 	}
 	return out
@@ -433,13 +504,32 @@ func sonarIssueSeverity(classic, issueType string, impacts []struct {
 
 func sonarRemediation(issueType string) string {
 	switch strings.ToUpper(issueType) {
-	case "VULNERABILITY", "SECURITY_HOTSPOT":
+	case "SECURITY_HOTSPOT":
+		return "Review this security hotspot and confirm whether the code is safe or needs a secure alternative."
+	case "VULNERABILITY":
 		return "Review this security finding and apply the secure alternative recommended by the SonarQube rule."
 	case "BUG":
 		return "Fix the reliability issue described by this SonarQube rule."
 	default:
 		return "Refactor this code to match the SonarQube quality rule."
 	}
+}
+
+func sonarDuplicationMeasures(measures []struct {
+	Metric string `json:"metric"`
+	Value  string `json:"value"`
+}) (blocks, lines int, density string) {
+	for _, m := range measures {
+		switch m.Metric {
+		case "duplicated_blocks":
+			blocks, _ = strconv.Atoi(strings.TrimSpace(strings.Split(m.Value, ".")[0]))
+		case "duplicated_lines":
+			lines, _ = strconv.Atoi(strings.TrimSpace(strings.Split(m.Value, ".")[0]))
+		case "duplicated_lines_density":
+			density = strings.TrimSpace(m.Value)
+		}
+	}
+	return blocks, lines, density
 }
 
 func cweFromAny(v any) string {

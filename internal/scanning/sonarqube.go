@@ -194,17 +194,21 @@ func (r *Runner) collectSonarQube(ctx context.Context, scanID, localOut string) 
 		if err != nil {
 			hotspots = nil
 		}
-		out, err := json.Marshal(map[string]any{"issues": issues, "hotspots": hotspots})
+		duplications, err := r.fetchSonarDuplications(ctx, token, key)
+		if err != nil {
+			duplications = nil
+		}
+		out, err := json.Marshal(map[string]any{"issues": issues, "hotspots": hotspots, "duplications": duplications})
 		if err != nil {
 			return nil, err
 		}
 		last = out
-		if len(issues)+len(hotspots) > 0 {
+		if len(issues)+len(hotspots)+len(duplications) > 0 {
 			return out, nil
 		}
 	}
 	if last == nil {
-		last = []byte(`{"issues":[],"hotspots":[]}`)
+		last = []byte(`{"issues":[],"hotspots":[],"duplications":[]}`)
 	}
 	return last, nil
 }
@@ -318,6 +322,43 @@ func (r *Runner) fetchSonarHotspots(ctx context.Context, token, projectKey strin
 		}
 		out = append(out, doc.Hotspots...)
 		if page*500 >= doc.Paging.Total || len(doc.Hotspots) == 0 {
+			break
+		}
+	}
+	return out, nil
+}
+
+func (r *Runner) fetchSonarDuplications(ctx context.Context, token, projectKey string) ([]json.RawMessage, error) {
+	out := make([]json.RawMessage, 0)
+	for page := 1; page <= 20; page++ {
+		q := url.Values{
+			"component":  {projectKey},
+			"metricKeys": {"duplicated_blocks,duplicated_lines,duplicated_lines_density"},
+			"strategy":   {"leaves"},
+			"ps":         {"500"},
+			"p":          {fmt.Sprintf("%d", page)},
+		}.Encode()
+		body, status, err := r.sonarDo(ctx, http.MethodGet, "/api/measures/component_tree", q, "", "", token)
+		if err != nil {
+			return nil, err
+		}
+		if status == http.StatusNotFound || status == http.StatusBadRequest {
+			return out, nil
+		}
+		if status >= 300 {
+			return nil, fmt.Errorf("duplication measures HTTP %d %s", status, truncate(string(body), 200))
+		}
+		var doc struct {
+			Components []json.RawMessage `json:"components"`
+			Paging     struct {
+				Total int `json:"total"`
+			} `json:"paging"`
+		}
+		if err := json.Unmarshal(body, &doc); err != nil {
+			return nil, err
+		}
+		out = append(out, doc.Components...)
+		if page*500 >= doc.Paging.Total || len(doc.Components) == 0 {
 			break
 		}
 	}

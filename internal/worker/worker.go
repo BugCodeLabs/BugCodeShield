@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"bugcode-shield/internal/crypto"
@@ -130,36 +131,125 @@ func (w *Worker) Handle(ctx context.Context, job queue.ScanJob) error {
 	}
 	hostOut := filepath.Join(w.cfg.HostWorkspace, job.ScanID, "out")
 
+	runCtx, stopRun := watchCancel(ctx, w.pool, job.ScanID)
+	defer stopRun()
+
+	first, second := splitScanWaves(scanners)
 	total := 0
-	for _, scanner := range scanners {
-		if cancelled(ctx, w.pool, job.ScanID) {
-			return nil
+	if len(first) > 0 {
+		if len(first) > 1 {
+			w.log(ctx, job.ScanID, "", "info", "Starting "+strings.Join(first, ", ")+" together, then SonarQube if selected")
 		}
-		w.log(ctx, job.ScanID, scanner, "info", "Starting scanner")
-		if scanner == "sonarqube" {
-			w.log(ctx, job.ScanID, scanner, "info", "Waiting for local SonarQube, then running sonar-scanner. First start can take a few minutes.")
-		}
-		res := w.runner.Run(ctx, scanner, job.ScanID, hostSrc, hostOut, outDir)
-		if res.Log != "" {
-			w.log(ctx, job.ScanID, scanner, "info", res.Log)
-		}
-		if len(res.Output) == 0 && res.Err != nil {
-			w.log(ctx, job.ScanID, scanner, "error", "Scanner failed: "+safeErr(res.Err))
-			continue
-		}
-		if res.Err != nil {
-			w.log(ctx, job.ScanID, scanner, "info", "Scanner reported issues; ingesting available findings")
-		}
-		parsed := parse(scanner, job.ScanID, projectID, res.Output)
-		if err := w.findings.InsertAll(ctx, parsed); err != nil {
+		n, err := w.runScannerBatch(runCtx, job.ScanID, projectID, hostSrc, hostOut, outDir, first)
+		if err != nil {
 			return w.fail(ctx, job.ScanID, err)
 		}
-		total += len(parsed)
-		w.log(ctx, job.ScanID, scanner, "info", fmt.Sprintf("Collected %d findings", len(parsed)))
+		total += n
+	}
+	if cancelled(ctx, w.pool, job.ScanID) || runCtx.Err() != nil {
+		return nil
+	}
+	if len(second) > 0 {
+		if len(first) > 0 {
+			w.log(ctx, job.ScanID, "", "info", "CLI scanners finished; starting SonarQube")
+		}
+		n, err := w.runScannerBatch(runCtx, job.ScanID, projectID, hostSrc, hostOut, outDir, second)
+		if err != nil {
+			return w.fail(ctx, job.ScanID, err)
+		}
+		total += n
+	}
+	if cancelled(ctx, w.pool, job.ScanID) {
+		return nil
 	}
 	_ = w.scans.UpdateStatus(ctx, job.ScanID, "COMPLETED", nil)
 	w.log(ctx, job.ScanID, "", "info", fmt.Sprintf("Scan completed with %d findings", total))
 	return nil
+}
+
+func splitScanWaves(scanners []string) (first, second []string) {
+	for _, name := range scanners {
+		if name == "sonarqube" {
+			second = append(second, name)
+			continue
+		}
+		first = append(first, name)
+	}
+	return first, second
+}
+
+func watchCancel(parent context.Context, pool *pgxpool.Pool, scanID string) (context.Context, context.CancelFunc) {
+	runCtx, cancel := context.WithCancel(parent)
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-runCtx.Done():
+				return
+			case <-ticker.C:
+				if cancelled(parent, pool, scanID) {
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+	return runCtx, cancel
+}
+
+func (w *Worker) runScannerBatch(ctx context.Context, scanID, projectID, hostSrc, hostOut, localOut string, scanners []string) (int, error) {
+	var (
+		mu    sync.Mutex
+		total int
+		fatal error
+	)
+	var wg sync.WaitGroup
+	for _, scanner := range scanners {
+		scanner := scanner
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			n, err := w.runOne(ctx, scanID, projectID, hostSrc, hostOut, localOut, scanner)
+			mu.Lock()
+			defer mu.Unlock()
+			total += n
+			if err != nil && fatal == nil {
+				fatal = err
+			}
+		}()
+	}
+	wg.Wait()
+	return total, fatal
+}
+
+func (w *Worker) runOne(ctx context.Context, scanID, projectID, hostSrc, hostOut, localOut, scanner string) (int, error) {
+	if ctx.Err() != nil || cancelled(ctx, w.pool, scanID) {
+		return 0, nil
+	}
+	w.log(ctx, scanID, scanner, "info", "Starting scanner")
+	if scanner == "sonarqube" {
+		w.log(ctx, scanID, scanner, "info", "Waiting for local SonarQube, then running sonar-scanner. First start can take a few minutes.")
+	}
+	scannerLocalOut := filepath.Join(localOut, scanner)
+	scannerHostOut := filepath.Join(hostOut, scanner)
+	res := w.runner.Run(ctx, scanner, scanID, hostSrc, scannerHostOut, scannerLocalOut)
+	if res.Log != "" {
+		w.log(ctx, scanID, scanner, "info", res.Log)
+	}
+	if len(res.Output) == 0 && res.Err != nil {
+		w.log(ctx, scanID, scanner, "error", "Scanner failed: "+safeErr(res.Err))
+		return 0, nil
+	}
+	if res.Err != nil {
+		w.log(ctx, scanID, scanner, "info", "Scanner reported issues; ingesting available findings")
+	}
+	parsed := parse(scanner, scanID, projectID, res.Output)
+	if err := w.findings.InsertAll(ctx, parsed); err != nil {
+		return 0, err
+	}
+	w.log(ctx, scanID, scanner, "info", fmt.Sprintf("Collected %d findings", len(parsed)))
+	return len(parsed), nil
 }
 
 func parse(scanner, scanID, projectID string, raw []byte) []finding.Finding {

@@ -1,6 +1,7 @@
 "use client";
 
 import { api, type Project, type Scan, type Source, type UserSettings } from "@/lib/api";
+import { SCANNER_GUIDE } from "@/lib/scanners";
 import { Button, Card, GhostButton, InlineWait, Input, Label, LoadingScreen, ProgressBar, Select, Spinner } from "@/components/ui";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -9,13 +10,7 @@ import { flushSync } from "react-dom";
 
 type SourceKind = "zip" | "directory" | "github";
 
-const SCANNER_OPTIONS = [
-  { id: "semgrep", label: "Semgrep", detail: "Code issues" },
-  { id: "trivy", label: "Trivy", detail: "Dependencies / CVEs" },
-  { id: "gitleaks", label: "Gitleaks", detail: "Secrets" },
-  { id: "sonarqube", label: "SonarQube", detail: "Quality, bugs, security hotspots" },
-  { id: "dependency-check", label: "Dependency-Check", detail: "Optional, slower" },
-];
+const SCANNER_OPTIONS = SCANNER_GUIDE;
 
 function formatBytes(n: number) {
   if (n < 1024) return `${n} B`;
@@ -33,6 +28,24 @@ function sourceUrl(src: Source) {
 
 function isScanRunning(status?: string) {
   return status === "QUEUED" || status === "PREPARING" || status === "RUNNING";
+}
+
+function sourceKey(src: Source) {
+  if (src.local_path) return `path:${src.local_path}`;
+  if (src.github_repo) return `github:${src.github_repo}@${src.github_ref || "main"}`;
+  return src.id;
+}
+
+function uniqueSources(items: Source[]) {
+  const seen = new Set<string>();
+  const out: Source[] = [];
+  for (const src of items) {
+    const key = sourceKey(src);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(src);
+  }
+  return out;
 }
 
 type PickedFolder = { name: string; path?: string; children: string[] };
@@ -84,8 +97,10 @@ export default function ProjectPage() {
   const [folderHint, setFolderHint] = useState("Reading folder…");
   const [waitSeconds, setWaitSeconds] = useState(0);
   const [readySource, setReadySource] = useState<Source | null>(null);
+  const [sources, setSources] = useState<Source[]>([]);
   const [savedGitHub, setSavedGitHub] = useState<UserSettings | null>(null);
   const folderPickedRef = useRef(false);
+  const pickedSavedRef = useRef(false);
 
   async function loadProject() {
     const p = await api.get<Project>(`/api/v1/projects/${projectId}`);
@@ -96,6 +111,17 @@ export default function ProjectPage() {
     const sc = await api.get<{ scans: Scan[] }>(`/api/v1/projects/${projectId}/scans`);
     setScans(sc.scans);
     return sc.scans;
+  }
+
+  async function loadSources() {
+    const res = await api.get<{ sources: Source[] }>(`/api/v1/projects/${projectId}/sources`);
+    const unique = uniqueSources(res.sources || []);
+    setSources(unique);
+    if (!pickedSavedRef.current && unique[0]) {
+      setReadySource(unique[0]);
+      pickedSavedRef.current = true;
+    }
+    return unique;
   }
 
   async function load() {
@@ -109,7 +135,10 @@ export default function ProjectPage() {
 
     async function refresh(initial: boolean) {
       try {
-        if (initial) await loadProject();
+        if (initial) {
+          await loadProject();
+          await loadSources();
+        }
         const list = await loadScans();
         if (stop) return;
         if (list.some((scan) => isScanRunning(scan.status))) {
@@ -215,7 +244,9 @@ export default function ProjectPage() {
       const body = new FormData();
       body.append("file", zipFile);
       const src = await api.upload<Source>(`/api/v1/projects/${projectId}/sources/zip`, body, setProgress);
+      pickedSavedRef.current = true;
       setReadySource(src);
+      loadSources().catch(() => undefined);
       setProgress(100);
       await load();
     } catch (err) {
@@ -239,7 +270,10 @@ export default function ProjectPage() {
       setFolderMatches([]);
       setFolderName(src.version_label || folderName);
       setLocalPath(src.local_path || body.path || "");
+      pickedSavedRef.current = true;
       setReadySource(src);
+      if (src.message) setError("");
+      loadSources().catch(() => undefined);
       load().catch(() => undefined);
     } catch (err) {
       setReadySource(null);
@@ -291,8 +325,10 @@ export default function ProjectPage() {
     setConnecting(true);
     try {
       const src = await api.post<Source>(`/api/v1/projects/${projectId}/sources/github`, { repository: repo, ref, token });
+      pickedSavedRef.current = true;
       setReadySource(src);
       setToken("");
+      loadSources().catch(() => undefined);
       await load();
     } catch (err) {
       setReadySource(null);
@@ -341,9 +377,39 @@ export default function ProjectPage() {
       </div>
       {error && <p className="rounded-md border border-[var(--down)]/40 bg-[var(--down)]/10 px-3 py-2 text-sm text-[var(--down)]">{error}</p>}
 
+      {sources.length > 0 && (
+        <Card>
+          <h2 className="text-lg font-medium">Saved locations</h2>
+          <p className="mt-1 text-sm text-[var(--muted)]">
+            Pick a folder you already added, then Start scan. Adding the same path again does not make scans faster.
+          </p>
+          <div className="mt-4 space-y-2">
+            {sources.map((src) => (
+              <button
+                key={src.id}
+                type="button"
+                onClick={() => {
+                  pickedSavedRef.current = true;
+                  setReadySource(src);
+                  setKind("");
+                  setFolderName(src.version_label);
+                  setLocalPath(src.local_path || "");
+                }}
+                className={`block w-full rounded-lg border p-3 text-left ${readySource?.id === src.id ? "border-[var(--accent)]" : "border-[var(--border)]"}`}
+              >
+                <p className="font-medium">{src.version_label}</p>
+                <p className="mt-1 break-all text-xs text-[var(--muted)]">{sourceUrl(src)} · {src.file_count ? `${src.file_count} files` : src.kind}</p>
+              </button>
+            ))}
+          </div>
+        </Card>
+      )}
+
       <Card>
         <h2 className="text-lg font-medium">Add source code</h2>
-        <p className="mt-1 text-sm text-[var(--muted)]">Point BugCode Shield at any folder, ZIP, or GitHub repo. Only that location is scanned.</p>
+        <p className="mt-1 text-sm text-[var(--muted)]">
+          Only needed for a new folder, ZIP, or GitHub repo. Reuse a saved location above if you already connected this project.
+        </p>
         <div className="mt-4">
           <Label>How do you want to add this project?</Label>
           <Select value={kind} onChange={(e) => { setKind(e.target.value as SourceKind | ""); resetPicker(); }}>
@@ -484,7 +550,8 @@ export default function ProjectPage() {
               <input className="mt-1" type="checkbox" checked={scanners.includes(item.id)} onChange={() => toggleScanner(item.id)} />
               <span>
                 <span className="block font-medium">{item.label}</span>
-                <span className="text-xs text-[var(--muted)]">{item.detail}</span>
+                <span className="block text-xs text-[var(--accent)]">{item.purpose}</span>
+                <span className="text-xs text-[var(--muted)]">{item.scans}. {item.bestFor}.</span>
               </span>
             </label>
           ))}
@@ -495,7 +562,7 @@ export default function ProjectPage() {
         {busy && <div className="mt-3"><InlineWait label="Starting scan…" /></div>}
         {readySource
           ? <p className="mt-2 break-all text-xs text-[var(--muted)]">{sourceUrl(readySource)}</p>
-          : <p className="mt-2 text-xs text-[var(--muted)]">Choose a folder, ZIP, or GitHub repository first.</p>}
+          : <p className="mt-2 text-xs text-[var(--muted)]">Select a saved location or add a folder, ZIP, or GitHub repository first.</p>}
       </Card>
 
       {scans.length > 0 && (

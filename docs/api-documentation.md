@@ -58,7 +58,7 @@ Local connect may respond with `status: "choose"` and `matches` when several fol
 | GET | `/api/v1/scans/{scanID}/ws` | WebSocket live status + logs (`?token=<jwt>`). Connect to the API host (`:3001`), not `/backend`. |
 | POST | `/api/v1/scans/{scanID}/cancel` | Cancel if still running |
 | GET | `/api/v1/scans/{scanID}/logs` | Scanner logs (REST fallback) |
-| GET | `/api/v1/scans/{scanID}/findings` | Filters: `severity`, `scanner`, `file`, `q` |
+| GET | `/api/v1/scans/{scanID}/findings` | Filters: `severity`, `scanner`, `category`, `file`, `q`. Categories: `security_hotspot`, `vulnerability`, `infrastructure`, `secret_leak`, `duplication`, `code_quality` |
 | GET | `/api/v1/scans/{scanID}/export.json` | JSON export |
 | GET | `/api/v1/scans/{scanID}/export.sarif` | SARIF export |
 | POST | `/api/v1/findings/{findingID}/explain` | AI text; needs OpenAI key in Settings or env |

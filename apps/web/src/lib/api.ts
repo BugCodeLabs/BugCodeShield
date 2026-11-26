@@ -153,6 +153,7 @@ export type Finding = {
   title: string;
   description: string;
   severity: "critical" | "high" | "medium" | "low" | "info";
+  category?: string;
   cwe?: string;
   cve?: string;
   file_path?: string;

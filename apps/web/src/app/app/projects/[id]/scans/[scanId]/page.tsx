@@ -1,7 +1,8 @@
 "use client";
 
 import { api, getToken, getWsOrigin, scanSocketURL, type Finding, type Scan, type ScanLog, type UserSettings } from "@/lib/api";
-import { Card, GhostButton, Input, LoadingScreen, SeverityBadge, Spinner } from "@/components/ui";
+import { ISSUE_CATEGORIES, issueCategory, scannerGuide } from "@/lib/scanners";
+import { Card, CategoryBadge, GhostButton, Input, LoadingScreen, SeverityBadge, Spinner } from "@/components/ui";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -36,6 +37,7 @@ export default function ScanIssuesPage() {
   const [logs, setLogs] = useState<ScanLog[]>([]);
   const [severity, setSeverity] = useState("");
   const [scanner, setScanner] = useState("");
+  const [category, setCategory] = useState("");
   const [fileFilter, setFileFilter] = useState("");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Finding | null>(null);
@@ -223,6 +225,19 @@ export default function ScanIssuesPage() {
     return next;
   }, [findings]);
 
+  const categoryCounts = useMemo(() => {
+    const next: Record<string, number> = {};
+    const scanners: Record<string, string[]> = {};
+    for (const finding of findings) {
+      const key = finding.category || "vulnerability";
+      next[key] = (next[key] || 0) + 1;
+      const label = scannerGuide(finding.scanner).label;
+      if (!scanners[key]) scanners[key] = [];
+      if (!scanners[key].includes(label)) scanners[key].push(label);
+    }
+    return { counts: next, scanners };
+  }, [findings]);
+
   const files = useMemo(() => {
     const map = new Map<string, number>();
     for (const finding of findings) {
@@ -237,6 +252,7 @@ export default function ScanIssuesPage() {
     return findings.filter((finding) => {
       if (severity && finding.severity !== severity) return false;
       if (scanner && finding.scanner !== scanner) return false;
+      if (category && (finding.category || "vulnerability") !== category) return false;
       if (fileFilter && (finding.file_path || "(no file)") !== fileFilter) return false;
       if (!q) return true;
       return (
@@ -246,7 +262,20 @@ export default function ScanIssuesPage() {
         (finding.file_path || "").toLowerCase().includes(q)
       );
     });
-  }, [findings, severity, scanner, fileFilter, query]);
+  }, [findings, severity, scanner, category, fileFilter, query]);
+
+  const grouped = useMemo(() => {
+    const known = new Set(ISSUE_CATEGORIES.map((item) => item.id));
+    const groups = ISSUE_CATEGORIES.map((item) => ({
+      ...item,
+      items: visible.filter((finding) => (finding.category || "vulnerability") === item.id),
+    }));
+    const leftover = visible.filter((finding) => !known.has(finding.category || "vulnerability"));
+    if (leftover.length > 0) {
+      groups.push({ id: "other", label: "Other", scanners: "Scanner", items: leftover });
+    }
+    return groups.filter((item) => item.items.length > 0);
+  }, [visible]);
 
   useEffect(() => {
     if (selected && !visible.some((item) => item.id === selected.id)) {
@@ -312,7 +341,16 @@ export default function ScanIssuesPage() {
         <Card className="flex items-center gap-4">
           <Spinner className="h-10 w-10 shrink-0 text-[var(--accent)]" />
           <div>
-            <p className="font-medium">{active ? `${active} is running` : scan.status === "PREPARING" ? "Preparing source" : "Queued"}</p>
+            <p className="font-medium">
+              {active
+                ? `${scannerGuide(active).label} is running`
+                : scan.status === "PREPARING"
+                  ? "Preparing source"
+                  : "Queued"}
+            </p>
+            {active && (
+              <p className="mt-1 text-sm text-[var(--accent)]">{scannerGuide(active).purpose}</p>
+            )}
             <p className="mt-1 text-sm text-[var(--muted)]">
               {logs.at(-1)?.message || "Waiting for the worker. Issues appear after every scanner finishes."}
             </p>
@@ -324,13 +362,17 @@ export default function ScanIssuesPage() {
           <div className="grid gap-2 sm:grid-cols-2">
             {(scan.scanners || []).map((name) => {
               const state = scannerState(name, logs);
+              const guide = scannerGuide(name);
               return (
-                <div key={name} className="flex items-center justify-between rounded-lg border border-[var(--border)] px-3 py-2">
-                  <span className="font-medium">{name}</span>
-                  <span className={`inline-flex items-center gap-2 text-xs ${state.error ? "text-[var(--down)]" : state.done ? "text-[var(--ok)]" : "text-[var(--accent)]"}`}>
-                    {state.label === "running" && <Spinner className="h-3 w-3" />}
-                    {state.label}
-                  </span>
+                <div key={name} className="rounded-lg border border-[var(--border)] px-3 py-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium">{guide.label}</span>
+                    <span className={`inline-flex items-center gap-2 text-xs ${state.error ? "text-[var(--down)]" : state.done ? "text-[var(--ok)]" : "text-[var(--accent)]"}`}>
+                      {state.label === "running" && <Spinner className="h-3 w-3" />}
+                      {state.label}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-[var(--muted)]">{guide.purpose}</p>
                 </div>
               );
             })}
@@ -347,6 +389,26 @@ export default function ScanIssuesPage() {
             ))}
             {logs.length === 0 && <p className="text-[var(--muted)]">Waiting for scanner output…</p>}
             <div ref={logEnd} />
+          </div>
+        </Card>
+
+        <Card>
+          <h2 className="text-lg font-medium">Purpose of this scan</h2>
+          <div className="mt-3 space-y-3">
+            {(scan.scanners || []).map((name) => {
+              const guide = scannerGuide(name);
+              const state = scannerState(name, logs);
+              return (
+                <div key={name} className="rounded-lg border border-[var(--border)] p-3">
+                  <p className="font-medium">
+                    {guide.label}
+                    {state.label === "running" ? " · running now" : state.done ? " · done" : ""}
+                  </p>
+                  <p className="mt-1 text-sm text-[var(--accent)]">{guide.purpose}</p>
+                  <p className="mt-1 text-sm text-[var(--muted)]">Scans {guide.scans.toLowerCase()}. Best for {guide.bestFor.toLowerCase()}.</p>
+                </div>
+              );
+            })}
           </div>
         </Card>
       </main>
@@ -382,6 +444,23 @@ export default function ScanIssuesPage() {
         </p>
       )}
 
+      <div>
+        <p className="mb-3 text-sm text-[var(--muted)]">Issue groups</p>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+          {ISSUE_CATEGORIES.map((item) => (
+            <button key={item.id} type="button" onClick={() => setCategory(category === item.id ? "" : item.id)}>
+              <Card className={category === item.id ? "border-[var(--accent)] h-full text-left" : "h-full text-left"}>
+                <p className="text-2xl font-semibold">{categoryCounts.counts[item.id] || 0}</p>
+                <p className="mt-1 text-sm font-medium">{item.label}</p>
+                <p className="mt-1 text-xs text-[var(--muted)]">
+                  {(categoryCounts.scanners[item.id] || []).join(", ") || item.scanners}
+                </p>
+              </Card>
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
         {SEVERITIES.map((key) => (
           <button key={key} type="button" onClick={() => setSeverity(severity === key ? "" : key)}>
@@ -394,14 +473,14 @@ export default function ScanIssuesPage() {
       </div>
 
       <Card>
-        <p className="mb-3 text-sm text-[var(--muted)]">Categories</p>
+        <p className="mb-3 text-sm text-[var(--muted)]">Filter by scanner</p>
         <div className="flex flex-wrap gap-2">
-          <GhostButton type="button" className={!severity && !scanner && !fileFilter ? "border-[var(--accent)]" : ""} onClick={() => { setSeverity(""); setScanner(""); setFileFilter(""); }}>
+          <GhostButton type="button" className={!severity && !scanner && !category && !fileFilter ? "border-[var(--accent)]" : ""} onClick={() => { setSeverity(""); setScanner(""); setCategory(""); setFileFilter(""); }}>
             All ({findings.length})
           </GhostButton>
           {(scan.scanners || []).map((name) => (
             <GhostButton key={name} type="button" className={scanner === name ? "border-[var(--accent)]" : ""} onClick={() => setScanner(scanner === name ? "" : name)}>
-              {name} ({scannerCounts[name] || 0})
+              {scannerGuide(name).label} ({scannerCounts[name] || 0})
             </GhostButton>
           ))}
         </div>
@@ -429,22 +508,29 @@ export default function ScanIssuesPage() {
 
         <Card className="max-h-[70vh] space-y-3 overflow-auto">
           <h2 className="text-sm font-medium">Issue list</h2>
-          {visible.map((finding) => (
-            <button
-              key={finding.id}
-              type="button"
-              onClick={() => { setSelected(finding); setExplanation(""); setExplainError(""); }}
-              className={`w-full rounded-lg border p-3 text-left hover:border-[var(--accent)] ${selected?.id === finding.id ? "border-[var(--accent)]" : "border-[var(--border)]"}`}
-            >
-              <div className="flex items-center justify-between gap-3">
-                <p className="font-medium">{finding.title}</p>
-                <SeverityBadge severity={finding.severity} />
-              </div>
-              <p className="mt-1 text-xs text-[var(--muted)]">
-                {finding.scanner} · {finding.file_path || "dependency"}
-                {finding.start_line ? `:${finding.start_line}` : ""}
+          {grouped.map((group) => (
+            <div key={group.id} className="space-y-2">
+              <p className="text-xs uppercase tracking-wide text-[var(--accent)]">
+                {group.label} · {group.items.length}
               </p>
-            </button>
+              {group.items.map((finding) => (
+                <button
+                  key={finding.id}
+                  type="button"
+                  onClick={() => { setSelected(finding); setExplanation(""); setExplainError(""); }}
+                  className={`w-full rounded-lg border p-3 text-left hover:border-[var(--accent)] ${selected?.id === finding.id ? "border-[var(--accent)]" : "border-[var(--border)]"}`}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="font-medium">{finding.title}</p>
+                    <SeverityBadge severity={finding.severity} />
+                  </div>
+                  <p className="mt-1 text-xs text-[var(--muted)]">
+                    {issueCategory(finding.category).label} · {scannerGuide(finding.scanner).label} · {finding.file_path || "dependency"}
+                    {finding.start_line ? `:${finding.start_line}` : ""}
+                  </p>
+                </button>
+              ))}
+            </div>
           ))}
           {visible.length === 0 && (
             <p className="text-sm text-[var(--muted)]">No issues for this filter.</p>
@@ -455,9 +541,15 @@ export default function ScanIssuesPage() {
           {!selected && <p className="text-sm text-[var(--muted)]">Select an issue to see the file, line, and code.</p>}
           {selected && (
             <div className="space-y-3">
-              <SeverityBadge severity={selected.severity} />
+              <div className="flex flex-wrap items-center gap-2">
+                <SeverityBadge severity={selected.severity} />
+                <CategoryBadge category={issueCategory(selected.category).label} />
+              </div>
               <h2 className="text-xl font-medium">{selected.title}</h2>
-              <p className="text-sm text-[var(--muted)]">{selected.scanner} · {selected.rule_id}</p>
+              <p className="text-sm text-[var(--muted)]">{scannerGuide(selected.scanner).label} · {selected.rule_id}</p>
+              <p className="text-sm text-[var(--muted)]">
+                Found by {scannerGuide(selected.scanner).label} in the {issueCategory(selected.category).label.toLowerCase()} group.
+              </p>
               <p>{selected.description}</p>
               <div className="rounded-md border border-[var(--border)] bg-[#0b1220] p-3 text-sm">
                 <p className="text-xs uppercase text-[var(--muted)]">Code location</p>

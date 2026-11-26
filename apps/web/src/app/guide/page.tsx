@@ -21,7 +21,7 @@ const steps = [
   { n: "3", title: "Point at your code", href: "/app", text: "Folder on this PC, a ZIP, or a GitHub repo. Only that location is scanned." },
   { n: "4", title: "Pick scanners", href: "/app", text: "Semgrep, Trivy, Gitleaks. SonarQube and Dependency-Check are optional." },
   { n: "5", title: "Watch the scan", href: "/app", text: "Live logs, then issues. Nothing is listed until every tool finishes." },
-  { n: "6", title: "Review and export", href: "/app", text: "Filter by severity and file. Export JSON or SARIF. Ask AI if you saved a key." },
+  { n: "6", title: "Review and export", href: "/app", text: "Group by hotspot, vulnerability, infrastructure, secret leak, duplication, and quality. Export JSON or SARIF. Ask AI if you saved a key." },
 ];
 
 const sources = [

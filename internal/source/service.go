@@ -21,6 +21,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/minio/minio-go/v7"
 )
@@ -299,6 +300,17 @@ func (s *Service) ConnectGitHub(w http.ResponseWriter, r *http.Request) {
 	if sha != "" {
 		shaPtr = &sha
 	}
+	if existing, ok, lookErr := s.lookupGitHub(r.Context(), projectID, repo, ref); lookErr != nil {
+		httputil.Error(w, http.StatusInternalServerError, "internal", "Internal server error")
+		return
+	} else if ok {
+		_, _ = s.pool.Exec(r.Context(), `UPDATE project_sources SET commit_sha=$2, token_ciphertext=COALESCE($3, token_ciphertext) WHERE id=$1`, existing.ID, shaPtr, nullBytes(tokenCipher))
+		existing.CommitSHA = shaPtr
+		existing.Status = "connected"
+		existing.Message = "Reusing saved github.com/" + repo + " on branch " + ref + ". Start scan — do not add the same repository again."
+		httputil.JSON(w, http.StatusOK, existing)
+		return
+	}
 	src, err := s.insert(r.Context(), projectID, userID, "github", repo+"@"+ref, nil, &repo, &ref, shaPtr, nil, 0, 0, tokenCipher)
 	if err != nil {
 		httputil.Error(w, http.StatusInternalServerError, "internal", "Internal server error")
@@ -368,6 +380,18 @@ func (s *Service) ConnectLocal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	label := filepath.Base(resolvedHost)
+	if existing, ok, lookErr := s.lookupLocal(r.Context(), projectID, resolvedHost); lookErr != nil {
+		httputil.Error(w, http.StatusInternalServerError, "internal", "Internal server error")
+		return
+	} else if ok {
+		_, _ = s.pool.Exec(r.Context(), `UPDATE project_sources SET file_count=$2, byte_size=$3 WHERE id=$1`, existing.ID, count, bytes)
+		existing.FileCount = count
+		existing.ByteSize = bytes
+		existing.Status = "local"
+		existing.Message = fmt.Sprintf("Reusing saved folder %s (%d files, %s). Start scan — adding the same path again does not make scans faster.", resolvedHost, count, formatBytes(bytes))
+		httputil.JSON(w, http.StatusOK, existing)
+		return
+	}
 	src, err := s.insert(r.Context(), projectID, userID, "local", label, nil, nil, nil, nil, &resolvedHost, count, bytes, nil)
 	if err != nil {
 		httputil.Error(w, http.StatusInternalServerError, "internal", "Internal server error")
@@ -376,6 +400,49 @@ func (s *Service) ConnectLocal(w http.ResponseWriter, r *http.Request) {
 	src.Status = "local"
 	src.Message = fmt.Sprintf("Using %s in place (%d files, %s). The project was not uploaded.", resolvedHost, count, formatBytes(bytes))
 	httputil.JSON(w, http.StatusCreated, src)
+}
+
+func (s *Service) lookupLocal(ctx context.Context, projectID, path string) (Source, bool, error) {
+	src, err := s.lookupSource(ctx, `
+		SELECT id::text, project_id::text, kind, version_label, storage_key, github_repo, github_ref, commit_sha, local_path, file_count, byte_size, created_at
+		FROM project_sources WHERE project_id=$1 AND kind IN ('local','zip') AND local_path=$2
+		ORDER BY created_at DESC LIMIT 1
+	`, projectID, path)
+	if err == pgx.ErrNoRows {
+		return Source{}, false, nil
+	}
+	if err != nil {
+		return Source{}, false, err
+	}
+	return src, true, nil
+}
+
+func (s *Service) lookupGitHub(ctx context.Context, projectID, repo, ref string) (Source, bool, error) {
+	src, err := s.lookupSource(ctx, `
+		SELECT id::text, project_id::text, kind, version_label, storage_key, github_repo, github_ref, commit_sha, local_path, file_count, byte_size, created_at
+		FROM project_sources WHERE project_id=$1 AND kind='github' AND github_repo=$2 AND github_ref=$3
+		ORDER BY created_at DESC LIMIT 1
+	`, projectID, repo, ref)
+	if err == pgx.ErrNoRows {
+		return Source{}, false, nil
+	}
+	if err != nil {
+		return Source{}, false, err
+	}
+	return src, true, nil
+}
+
+func (s *Service) lookupSource(ctx context.Context, q string, args ...any) (Source, error) {
+	var src Source
+	err := s.pool.QueryRow(ctx, q, args...).Scan(&src.ID, &src.ProjectID, &src.Kind, &src.VersionLabel, &src.StorageKey, &src.GitHubRepo, &src.GitHubRef, &src.CommitSHA, &src.LocalPath, &src.FileCount, &src.ByteSize, &src.CreatedAt)
+	return src, err
+}
+
+func nullBytes(v []byte) any {
+	if len(v) == 0 {
+		return nil
+	}
+	return v
 }
 
 func (s *Service) insert(ctx context.Context, projectID, userID, kind, label string, key, repo, ref, commit, localPath *string, count int, size int64, token []byte) (Source, error) {

@@ -100,6 +100,14 @@ export function ProgressBar({ value }: { value: number }) {
   );
 }
 
+export function CategoryBadge({ category }: { category: string }) {
+  return (
+    <span className="rounded-full border border-[var(--accent)] px-2 py-0.5 text-xs text-[var(--accent)]">
+      {category}
+    </span>
+  );
+}
+
 export function SeverityBadge({ severity }: { severity: string }) {
   const color: Record<string, string> = {
     critical: "text-[var(--critical)] border-[var(--critical)]",

@@ -49,7 +49,9 @@ On **Projects**, use **New project**. A project is only a name until you attach 
 
 ## 3. Point it at your code
 
-On the project page, under **Add source code**, pick one option.
+On the project page, **Saved locations** lists folders you already connected. Select one and click **Start scan**. Do not add the same folder again — that does not make analysis faster.
+
+To attach code the first time, under **Add source code**, pick one option.
 
 ### Folder on this computer (usual path)
 
@@ -106,11 +108,12 @@ First time: scan `testdata/vulnerable-sample` in this repo so you know the dashb
 
 ## 6. Review issues
 
+- **Issue groups** — security hotspot, vulnerability, infrastructure, secret leak, duplication, and code quality. Each card shows the count and which scanner found those issues. Click a group to filter.
 - Severity counts (critical → info) — click a count to filter
-- Category buttons per scanner
+- Scanner buttons — Semgrep, Trivy, Gitleaks, SonarQube, Dependency-Check
 - **File directory** on the left
-- Issue list in the middle; click one
-- Detail on the right: file, line, snippet, remediation
+- Issue list in the middle, grouped by category; click one
+- Detail on the right: category, scanner, file, line, snippet, remediation
 
 Export with **JSON** or **SARIF**.
 

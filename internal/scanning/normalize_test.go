@@ -42,6 +42,9 @@ func TestParseGitleaksRedactsSecret(t *testing.T) {
 	if got[0].Severity != "high" {
 		t.Fatalf("severity %s", got[0].Severity)
 	}
+	if got[0].Category != "secret_leak" {
+		t.Fatalf("category %s", got[0].Category)
+	}
 }
 
 func TestParseSemgrep(t *testing.T) {
@@ -52,6 +55,9 @@ func TestParseSemgrep(t *testing.T) {
 	}
 	if got[0].Severity != "medium" {
 		t.Fatalf("severity %s", got[0].Severity)
+	}
+	if got[0].Category != "vulnerability" {
+		t.Fatalf("category %s", got[0].Category)
 	}
 	if got[0].FilePath == nil || *got[0].FilePath != "app.js" {
 		t.Fatalf("path %+v", got[0].FilePath)
@@ -69,6 +75,26 @@ func TestParseTrivySecrets(t *testing.T) {
 	}
 	if got[0].Snippet == nil || *got[0].Snippet == "AKIA0TESTKEYTESTKEY" {
 		t.Fatal("secret was not redacted")
+	}
+	if got[0].Category != "secret_leak" {
+		t.Fatalf("category %s", got[0].Category)
+	}
+}
+
+func TestParseTrivyCategories(t *testing.T) {
+	raw := []byte(`{"Results":[
+		{"Target":"go.mod","Vulnerabilities":[{"VulnerabilityID":"CVE-2024-1","PkgName":"demo","InstalledVersion":"1.0","Severity":"HIGH","Title":"demo CVE"}]},
+		{"Target":"Dockerfile","Misconfigurations":[{"ID":"DS002","Title":"root user","Description":"user","Severity":"MEDIUM","Message":"do not run as root","Resolution":"use non-root"}]}
+	]}`)
+	got := ParseTrivy("scan-1", "proj-1", raw)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 findings, got %d", len(got))
+	}
+	if got[0].Category != "vulnerability" {
+		t.Fatalf("cve category %s", got[0].Category)
+	}
+	if got[1].Category != "infrastructure" {
+		t.Fatalf("misconfig category %s", got[1].Category)
 	}
 }
 
@@ -112,20 +138,26 @@ func TestParseSonarQube(t *testing.T) {
 		],
 		"hotspots":[
 			{"key":"h1","ruleKey":"javascript:S2068","component":"bcs-scan:app.js","project":"bcs-scan","vulnerabilityProbability":"HIGH","status":"TO_REVIEW","line":5,"message":"hardcoded secret"}
+		],
+		"duplications":[
+			{"path":"lib.js","measures":[{"metric":"duplicated_blocks","value":"2"},{"metric":"duplicated_lines","value":"40"},{"metric":"duplicated_lines_density","value":"12.5"}]}
 		]
 	}`)
 	got := ParseSonarQube("scan-1", "proj-1", raw)
-	if len(got) != 2 {
-		t.Fatalf("expected 2 findings, got %d", len(got))
+	if len(got) != 3 {
+		t.Fatalf("expected 3 findings, got %d", len(got))
 	}
-	if got[0].Scanner != "sonarqube" || got[0].Severity != "high" {
+	if got[0].Scanner != "sonarqube" || got[0].Severity != "high" || got[0].Category != "vulnerability" {
 		t.Fatalf("issue %+v", got[0])
 	}
 	if got[0].FilePath == nil || *got[0].FilePath != "app.js" {
 		t.Fatalf("path %+v", got[0].FilePath)
 	}
-	if got[1].RuleID != "javascript:S2068" || got[1].Severity != "high" {
+	if got[1].RuleID != "javascript:S2068" || got[1].Severity != "high" || got[1].Category != "security_hotspot" {
 		t.Fatalf("hotspot %+v", got[1])
+	}
+	if got[2].Category != "duplication" || got[2].FilePath == nil || *got[2].FilePath != "lib.js" {
+		t.Fatalf("duplication %+v", got[2])
 	}
 }
 

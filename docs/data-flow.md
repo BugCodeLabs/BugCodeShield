@@ -108,14 +108,16 @@ sequenceDiagram
   W->>W: materialize source<br/>in-place path / unzip / git clone
   W->>P: RUNNING
 
-  loop each scanner
-    W->>D: docker run IMAGE -v src:/src:ro -v out:/out
-    D->>S: scan /src write JSON
-    S-->>W: /out/semgrep.json etc.
+  par CLI scanners
+    W->>D: docker run semgrep/trivy/gitleaks/…
+    D->>S: write /out/{scanner}/*.json
     W->>P: INSERT findings + scan_logs
-    W->>R: publish log/status
-    A-->>U: log + finding_count
   end
+  W->>D: docker run sonar-scanner (after CLIs)
+  D->>S: SonarQube analysis
+  W->>P: INSERT findings
+  W->>R: publish log/status
+  A-->>U: log + finding_count
 
   W->>P: COMPLETED or FAILED
   A-->>U: done
