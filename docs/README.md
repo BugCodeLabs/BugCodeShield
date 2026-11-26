@@ -17,6 +17,9 @@ People **using** the product (scan their own project): [User guide](./user-guide
 | [Docker guide](./docker-guide.md) | Compose services and ports |
 | [Development setup](./development-setup.md) | First run, native API/web, tests |
 | [Contributing](../CONTRIBUTING.md) | How to land a change |
+| [License](../LICENSE) | Apache License 2.0 |
+| [Security policy](../SECURITY.md) | Private vulnerability reports |
+| [Code of conduct](../CODE_OF_CONDUCT.md) | Community standards |
 | [Implementation roadmap](./implementation-roadmap.md) | Phase status |
 
 Day-one path:

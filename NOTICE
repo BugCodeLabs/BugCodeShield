@@ -1,0 +1,9 @@
+BugCode Shield
+Copyright 2026 BugCode Labs and contributors
+
+This product is licensed under the Apache License, Version 2.0.
+See the LICENSE file in the project root.
+
+Third-party scanners invoked at runtime (Semgrep, Trivy, Gitleaks, SonarQube,
+OWASP Dependency-Check, and their container images) remain under their own
+licenses. This repository does not relicense those tools.

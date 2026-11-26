@@ -13,4 +13,4 @@ Core tables:
 - `scan_logs` — operator-visible progress
 - `user_settings` — encrypted GitHub token and OpenAI key, plus optional model / base URL
 
-Migrations: `001_init.sql`, `002_local_path.sql`, `003_user_settings.sql`, `004_finding_category.sql`. Applied automatically on API and worker startup.
+Migrations: `001_init.sql`, `002_local_path.sql`, `003_user_settings.sql`, `004_finding_category.sql`, `005_scan_source_cascade.sql`. Applied automatically on API and worker startup. Deleting a project removes its sources, scans, findings, and logs.

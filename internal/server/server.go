@@ -79,6 +79,7 @@ func New(cfg config.Config, logger *slog.Logger, checker *health.Checker, deps D
 			r.Post("/orgs/{orgID}/projects", deps.Projects.Create)
 			r.Get("/projects", deps.Projects.ListMine)
 			r.Get("/projects/{projectID}", deps.Projects.Get)
+			r.Delete("/projects/{projectID}", deps.Projects.Delete)
 			r.Get("/projects/{projectID}/summary", deps.Findings.Summary)
 
 			r.Get("/projects/{projectID}/sources", deps.Sources.List)

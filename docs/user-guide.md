@@ -47,6 +47,8 @@ Already registered? Use **Sign in**.
 
 On **Projects**, use **New project**. A project is only a name until you attach source. Click the card to open it.
 
+To remove a project, open it and scroll to **Danger zone** at the bottom. Click **Delete project**, type the project name exactly, then **Permanently delete**. That removes scans, findings, logs, and uploaded ZIP copies. The original folder on your computer is not deleted.
+
 ## 3. Point it at your code
 
 On the project page, **Saved locations** lists folders you already connected. Select one and click **Start scan**. Do not add the same folder again — that does not make analysis faster.
@@ -133,5 +135,6 @@ Tokens are encrypted. The UI only shows a hint after save, not the full secret.
 - BugCode Shield does not run your app, `npm install`, or tests on the host.
 - A local folder scan does not upload the whole tree.
 - Ask AI never applies a patch for you.
+- Deleting a project does not delete the original folder you scanned on disk.
 
 If a scan finishes with **0 issues**, the tools found nothing in **that** location. Attach the application folder (not an empty or unrelated directory) and start a new scan.

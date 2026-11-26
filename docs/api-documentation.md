@@ -34,6 +34,7 @@ Empty token fields mean “keep existing”. Never returns the full secret.
 | POST | `/api/v1/orgs/{orgID}/projects` | `{name, description}` |
 | GET | `/api/v1/projects` | Projects the user can access |
 | GET | `/api/v1/projects/{projectID}` | Detail |
+| DELETE | `/api/v1/projects/{projectID}` | `{name}` must match the project name exactly, then deletes the project, scans, findings, logs, uploaded ZIP copies, and scan workspaces |
 | GET | `/api/v1/projects/{projectID}/summary` | Finding summary |
 
 ## Sources

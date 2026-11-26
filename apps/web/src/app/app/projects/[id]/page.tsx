@@ -99,6 +99,9 @@ export default function ProjectPage() {
   const [readySource, setReadySource] = useState<Source | null>(null);
   const [sources, setSources] = useState<Source[]>([]);
   const [savedGitHub, setSavedGitHub] = useState<UserSettings | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [confirmName, setConfirmName] = useState("");
+  const [deleting, setDeleting] = useState(false);
   const folderPickedRef = useRef(false);
   const pickedSavedRef = useRef(false);
 
@@ -358,6 +361,21 @@ export default function ProjectPage() {
     setScanners((current) => (current.includes(name) ? current.filter((item) => item !== name) : [...current, name]));
   }
 
+  const nameConfirmed = Boolean(project && confirmName.trim() === project.name);
+
+  async function deleteProject() {
+    if (!project || !nameConfirmed) return;
+    setError("");
+    setDeleting(true);
+    try {
+      await api.delete(`/api/v1/projects/${projectId}`, { name: confirmName.trim() });
+      router.push("/app");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not delete project");
+      setDeleting(false);
+    }
+  }
+
   if (!project) return <LoadingScreen label="Loading project…" />;
 
   const folderVisible = Boolean(folderName || localPath || readySource?.local_path || folderMatches.length > 0);
@@ -376,6 +394,45 @@ export default function ProjectPage() {
         <p className="text-[var(--muted)]">{project.description}</p>
       </div>
       {error && <p className="rounded-md border border-[var(--down)]/40 bg-[var(--down)]/10 px-3 py-2 text-sm text-[var(--down)]">{error}</p>}
+
+      {deleteOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+          <Card className="w-full max-w-lg border-[var(--down)]">
+            <h2 className="text-lg font-medium text-[var(--down)]">Delete this project?</h2>
+            <p className="mt-2 text-sm text-[var(--muted)]">
+              This permanently removes <span className="font-medium text-[var(--foreground)]">{project.name}</span> and
+              everything stored for it: scans, findings, logs, uploaded ZIP copies, and scan workspaces.
+              Your original folder on disk is not deleted.
+            </p>
+            <p className="mt-4 text-sm">Type <span className="font-mono font-medium">{project.name}</span> to confirm.</p>
+            <Input
+              className="mt-2"
+              autoFocus
+              value={confirmName}
+              onChange={(e) => setConfirmName(e.target.value)}
+              placeholder={project.name}
+              autoComplete="off"
+            />
+            {confirmName.trim() !== "" && !nameConfirmed && (
+              <p className="mt-2 text-sm text-[var(--down)]">The name does not match yet.</p>
+            )}
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              <GhostButton type="button" disabled={deleting} onClick={() => { setDeleteOpen(false); setConfirmName(""); }}>
+                Cancel
+              </GhostButton>
+              <Button
+                type="button"
+                className="bg-[var(--down)] text-white"
+                loading={deleting}
+                disabled={!nameConfirmed}
+                onClick={() => deleteProject().catch(() => undefined)}
+              >
+                {deleting ? "Deleting…" : "Permanently delete"}
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
 
       {sources.length > 0 && (
         <Card>
@@ -578,6 +635,16 @@ export default function ProjectPage() {
           </div>
         </Card>
       )}
+
+      <Card className="border-[var(--down)]/40">
+        <h2 className="text-lg font-medium">Danger zone</h2>
+        <p className="mt-1 text-sm text-[var(--muted)]">
+          Delete this project and all related scans, findings, logs, and uploaded copies. You will type the project name to confirm.
+        </p>
+        <GhostButton type="button" className="mt-4 border-[var(--down)] text-[var(--down)]" onClick={() => { setConfirmName(""); setDeleteOpen(true); }}>
+          Delete project
+        </GhostButton>
+      </Card>
     </main>
   );
 }

@@ -17,7 +17,7 @@ type LoadState =
   | { kind: "ok"; report: ReadyReport; checkedAt: Date }
   | { kind: "error"; message: string; checkedAt: Date };
 
-export function StatusPage() {
+export function StatusPage({ embedded = false }: { embedded?: boolean }) {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
 
   const refresh = useCallback(async () => {
@@ -44,13 +44,13 @@ export function StatusPage() {
   const healthy = state.kind === "ok" && state.report.status === "ok";
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-5xl flex-col gap-8 px-6 py-10">
+    <main className={cn("mx-auto flex max-w-5xl flex-col gap-8 px-6", embedded ? "py-8" : "min-h-screen py-10")}>
       <header className="flex flex-col gap-4 border-b border-[var(--border)] pb-6 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-sm uppercase tracking-[0.2em] text-[var(--muted)]">
             Platform
           </p>
-          <h1 className="mt-1 text-3xl font-semibold">BugCode Shield</h1>
+          <h1 className="mt-1 text-3xl font-semibold">{embedded ? "Infrastructure" : "BugCode Shield"}</h1>
           <p className="mt-2 max-w-xl text-[var(--muted)]">
             Unified code security and quality analysis. This page confirms the
             web app can reach the API and that infrastructure services are

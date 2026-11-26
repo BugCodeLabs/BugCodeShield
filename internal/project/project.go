@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/minio/minio-go/v7"
 )
 
 type Project struct {
@@ -25,12 +26,25 @@ type Project struct {
 }
 
 type Service struct {
-	pool *pgxpool.Pool
-	orgs *org.Service
+	pool        *pgxpool.Pool
+	orgs        *org.Service
+	minio       *minio.Client
+	bucket      string
+	sourcesDir  string
+	hostSources string
+	workspace   string
 }
 
-func New(pool *pgxpool.Pool, orgs *org.Service) *Service {
-	return &Service{pool: pool, orgs: orgs}
+func New(pool *pgxpool.Pool, orgs *org.Service, mc *minio.Client, bucket, sourcesDir, hostSources, workspace string) *Service {
+	return &Service{
+		pool:        pool,
+		orgs:        orgs,
+		minio:       mc,
+		bucket:      bucket,
+		sourcesDir:  sourcesDir,
+		hostSources: hostSources,
+		workspace:   workspace,
+	}
 }
 
 type createRequest struct {

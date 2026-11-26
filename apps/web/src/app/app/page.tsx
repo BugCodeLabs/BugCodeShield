@@ -52,8 +52,7 @@ export default function ProjectsPage() {
         <h1 className="text-2xl font-semibold">Projects</h1>
         {projects.length === 0 && (
           <p className="text-[var(--muted)]">
-            No projects yet. Create one to start scanning.{" "}
-            <Link className="text-[var(--accent)] underline" href="/guide">How to use BugCode Shield</Link>
+            No projects yet. Create one to start scanning.
           </p>
         )}
         {projects.map((project) => (

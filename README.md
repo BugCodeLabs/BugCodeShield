@@ -1,8 +1,13 @@
 # BugCode Shield
 
-Unified code security and quality analysis platform.
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![CI](https://github.com/BugCodeLabs/BugCodeShield/actions/workflows/ci.yml/badge.svg)](https://github.com/BugCodeLabs/BugCodeShield/actions/workflows/ci.yml)
+
+Open-source unified code security and quality analysis platform.
 
 Register an account, create a project, upload source (ZIP, folder, or GitHub), and run Semgrep, Trivy, Gitleaks, and optionally SonarQube and OWASP Dependency-Check. Findings land in one dashboard with JSON/SARIF export and an optional AI explanation.
+
+**License:** [Apache License 2.0](LICENSE) · **Contribute:** [CONTRIBUTING.md](CONTRIBUTING.md) · **Security:** [SECURITY.md](SECURITY.md)
 
 ## Quick start
 
@@ -49,3 +54,9 @@ Set `OPENAI_API_KEY` or save a key in **Settings** if you want Ask AI. It explai
 ## Documentation
 
 New contributors: start at [`docs/README.md`](docs/README.md) (architecture, requirements, data flow, contributing). End users: [`docs/user-guide.md`](docs/user-guide.md).
+
+## License
+
+Copyright 2026 BugCode Labs and contributors. Licensed under the [Apache License, Version 2.0](LICENSE).
+
+You may use, modify, and distribute this software under those terms. Scanner images pulled at runtime (Semgrep, Trivy, Gitleaks, SonarQube, Dependency-Check) keep their own licenses; see [NOTICE](NOTICE).

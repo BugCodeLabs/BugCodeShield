@@ -130,10 +130,12 @@ services:
       SCAN_CONTAINER_HOME: /host-home
       SCAN_SOURCES: /var/lib/bugcodeshield/sources
       SCAN_HOST_SOURCES: ${PWD}/data/sources
+      SCAN_WORKSPACE: /var/lib/bugcodeshield/scans
     user: "0:0"
     volumes:
       - ${HOME}:/host-home:ro
       - ./data/sources:/var/lib/bugcodeshield/sources
+      - ./data/scans:/var/lib/bugcodeshield/scans
     ports:
       - "127.0.0.1:${API_PORT:-3001}:3000"
     depends_on:

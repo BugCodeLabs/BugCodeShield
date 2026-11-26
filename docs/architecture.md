@@ -94,6 +94,8 @@ Each selected scanner is `docker run --rm` with:
 
 The worker reads `semgrep.json` / `trivy.json` / `gitleaks.json` / `sonarqube.json`, parses them, and inserts `findings` with a category (`security_hotspot`, `vulnerability`, `infrastructure`, `secret_leak`, `duplication`, `code_quality`). One scanner failing does not cancel the others. Semgrep, Trivy, Gitleaks, and Dependency-Check run at the same time (separate `/out/{scanner}` dirs). SonarQube starts after that wave so the 5 GB scanner does not overlap the CLIs.
 
+Deleting a project (`DELETE /api/v1/projects/{id}` with a matching `name`) cancels running scans, then removes findings, logs, scans, sources, MinIO objects, and extracted ZIP copies. The user's original folder is never deleted.
+
 ## Desktop
 
 Out of scope. Do not add `cmd/desktop` unless requested.

@@ -45,7 +45,7 @@ const sources = [
 const screens = [
   { title: "Register / sign in", detail: "Creates your user. Sign in later from the same browser." },
   { title: "Projects", detail: "List plus New project. Click a card to open it." },
-  { title: "Project", detail: "Add source, tick scanners, Start scan. Previous scans are listed below." },
+  { title: "Project", detail: "Add source, tick scanners, Start scan. Danger zone at the bottom deletes the project after you type its name." },
   { title: "Scanning", detail: "QUEUED → PREPARING → RUNNING. Cancel if the folder is wrong." },
   { title: "Issues", detail: "Severity counts, file tree, snippet, JSON/SARIF, Ask AI." },
   { title: "Settings", detail: "Profile icon → Settings. GitHub token and OpenAI key, encrypted." },
@@ -175,9 +175,10 @@ export default function GuidePage() {
 
       <footer className="relative z-10 border-t border-white/10">
         <div className="mx-auto flex max-w-6xl flex-col gap-4 px-6 py-8 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-          <p>BugCode Shield · local security scanning</p>
-          <div className="flex gap-5">
+          <p>BugCode Shield · open source under Apache-2.0</p>
+          <div className="flex flex-wrap gap-5">
             <Link href="/" className="hover:text-slate-200">Home</Link>
+            <a href="https://github.com/BugCodeLabs/BugCodeShield" className="hover:text-slate-200">GitHub</a>
             <Link href="/register" className="hover:text-slate-200">Get started</Link>
             <Link href="/status" className="hover:text-slate-200">Infrastructure</Link>
           </div>

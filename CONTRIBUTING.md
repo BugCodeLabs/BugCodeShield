@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for working on BugCode Shield. This is a local security scanner (Go API + worker + Next.js). Read [docs/README.md](docs/README.md) first.
+Thanks for working on BugCode Shield. This is an **Apache-2.0** open-source local security scanner (Go API + worker + Next.js). Read [docs/README.md](docs/README.md) first. By opening a pull request you agree that your contribution is licensed under the same [Apache License 2.0](LICENSE). Please also follow the [code of conduct](CODE_OF_CONDUCT.md).
 
 ## Before you write code
 
@@ -31,7 +31,7 @@ Where to put a change: [Architecture — package map](docs/architecture.md#packa
 - Description should say **why**, how to test, and any risk (migrations, Compose, secrets).
 - Do not include `.env`, credentials, real GitHub/OpenAI tokens, or customer source.
 
-Use GitHub (`gh`) for issues and PRs when this repo is on GitHub.
+Use GitHub for issues and PRs: [BugCodeLabs/BugCodeShield](https://github.com/BugCodeLabs/BugCodeShield). Security bugs: [SECURITY.md](SECURITY.md), not a public issue.
 
 ## Coding rules
 

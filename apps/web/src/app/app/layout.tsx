@@ -141,8 +141,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <Link href="/app" className="text-lg font-semibold">BugCode Shield</Link>
         <nav className="flex items-center gap-5 text-sm text-[var(--muted)]">
           <NavLink href="/app" label="Projects" pathname={pathname} />
-          <Link href="/guide" className="hover:text-[var(--foreground)]">How to use</Link>
-          <Link href="/status" className="hover:text-[var(--foreground)]">Infrastructure</Link>
+          <NavLink href="/app/status" label="Infrastructure" pathname={pathname} />
           <UserMenu user={user} />
         </nav>
       </header>

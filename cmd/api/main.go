@@ -75,7 +75,7 @@ func main() {
 
 	authSvc := auth.New(clients.Postgres, cfg.JWTSecret, 24*time.Hour)
 	orgs := org.New(clients.Postgres)
-	projects := project.New(clients.Postgres, orgs)
+	projects := project.New(clients.Postgres, orgs, clients.MinIO, cfg.MinIOBucket, cfg.ScanSources, cfg.ScanHostSources, cfg.ScanWorkspace)
 	settingsSvc := settings.New(clients.Postgres, encKey)
 	sources := source.New(clients.Postgres, orgs, clients.MinIO, cfg.MinIOBucket, encKey, source.Paths{
 		HostHome:      cfg.ScanHostHome,

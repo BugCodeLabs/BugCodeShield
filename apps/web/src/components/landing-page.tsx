@@ -293,10 +293,11 @@ export function LandingPage() {
 
       <footer className="relative z-10 border-t border-white/10">
         <div className="mx-auto flex max-w-6xl flex-col gap-4 px-6 py-8 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-          <p>BugCode Shield · local security scanning</p>
-          <div className="flex gap-5">
+          <p>BugCode Shield · open source under Apache-2.0</p>
+          <div className="flex flex-wrap gap-5">
             <Link href="/#solutions" className="hover:text-slate-200">Solutions</Link>
             <Link href="/guide" className="hover:text-slate-200">How to use</Link>
+            <a href="https://github.com/BugCodeLabs/BugCodeShield" className="hover:text-slate-200">GitHub</a>
             <Link href="/login" className="hover:text-slate-200">Sign in</Link>
             <Link href="/register" className="hover:text-slate-200">Get started</Link>
             <Link href="/status" className="hover:text-slate-200">Infrastructure</Link>

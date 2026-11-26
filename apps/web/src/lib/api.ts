@@ -61,6 +61,8 @@ export const api = {
     request<T>(path, { method: "PUT", body: JSON.stringify(body ?? {}) }),
   patch: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "PATCH", body: JSON.stringify(body ?? {}) }),
+  delete: <T>(path: string, body?: unknown) =>
+    request<T>(path, { method: "DELETE", body: body === undefined ? undefined : JSON.stringify(body) }),
   upload: <T>(path: string, body: FormData, onProgress?: (percent: number) => void) =>
     uploadWithProgress<T>(path, body, onProgress),
 };
