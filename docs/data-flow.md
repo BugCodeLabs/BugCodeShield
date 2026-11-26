@@ -11,6 +11,7 @@ flowchart LR
   API[Go API :3001]
   PG[(Postgres)]
   Q[[RabbitMQ]]
+  Redis[(Redis)]
   Minio[(MinIO)]
   Worker[Go worker]
   Docker[Host Docker]
@@ -18,11 +19,14 @@ flowchart LR
 
   Browser --> Web
   Web -->|"/backend/*"| API
+  Browser -->|"scan WebSocket :3001"| API
   API --> PG
   API --> Q
+  API --> Redis
   API --> Minio
   Q --> Worker
   Worker --> PG
+  Worker --> Redis
   Worker --> Minio
   Worker --> Docker
   Docker --> Scanners
@@ -86,6 +90,7 @@ sequenceDiagram
   participant A as api
   participant P as Postgres
   participant Q as RabbitMQ
+  participant R as Redis
   participant W as worker
   participant D as docker run
   participant S as scanner image
@@ -94,10 +99,12 @@ sequenceDiagram
   A->>P: INSERT scans status=QUEUED
   A->>Q: publish {scan_id}
   A-->>U: 202 Scan
-  U->>A: poll GET /scans/:id and /logs
+  U->>A: WebSocket GET /scans/:id/ws?token=JWT
 
   Q->>W: consume
   W->>P: PREPARING
+  W->>R: publish scan event
+  A-->>U: status + logs
   W->>W: materialize source<br/>in-place path / unzip / git clone
   W->>P: RUNNING
 
@@ -106,11 +113,16 @@ sequenceDiagram
     D->>S: scan /src write JSON
     S-->>W: /out/semgrep.json etc.
     W->>P: INSERT findings + scan_logs
+    W->>R: publish log/status
+    A-->>U: log + finding_count
   end
 
   W->>P: COMPLETED or FAILED
+  A-->>U: done
   U->>A: GET /scans/:id/findings
 ```
+
+The scan page opens a WebSocket to the API host (`ws://127.0.0.1:3001`). RabbitMQ stays the job queue; Redis fans worker log/status events out to API sockets. REST `GET /scans/:id` polling is only a fallback if the socket cannot connect.
 
 Worker materialize rules (`internal/worker/worker.go`):
 

@@ -17,6 +17,7 @@ import (
 	"bugcode-shield/internal/db"
 	"bugcode-shield/internal/finding"
 	"bugcode-shield/internal/health"
+	"bugcode-shield/internal/live"
 	"bugcode-shield/internal/org"
 	"bugcode-shield/internal/platform"
 	"bugcode-shield/internal/project"
@@ -83,7 +84,9 @@ func main() {
 		HostSources:   cfg.ScanHostSources,
 	}, settingsSvc)
 	q := queue.New(cfg.RabbitMQURL())
-	scans := scan.New(clients.Postgres, orgs, q)
+	events := live.New(clients.Redis)
+	go events.Serve(ctx)
+	scans := scan.New(clients.Postgres, orgs, q, events, authSvc)
 	findings := finding.New(clients.Postgres, orgs)
 	aiSvc := ai.New(findings, settingsSvc, cfg.OpenAIAPIKey, cfg.OpenAIBaseURL, cfg.OpenAIModel)
 	checker := health.New(clients)

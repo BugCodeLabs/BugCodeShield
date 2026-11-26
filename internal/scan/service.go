@@ -8,6 +8,7 @@ import (
 
 	"bugcode-shield/internal/auth"
 	"bugcode-shield/internal/httputil"
+	"bugcode-shield/internal/live"
 	"bugcode-shield/internal/org"
 	"bugcode-shield/internal/queue"
 
@@ -42,13 +43,15 @@ type Scan struct {
 }
 
 type Service struct {
-	pool  *pgxpool.Pool
-	orgs  *org.Service
-	queue *queue.Client
+	pool   *pgxpool.Pool
+	orgs   *org.Service
+	queue  *queue.Client
+	events *live.Hub
+	auth   *auth.Service
 }
 
-func New(pool *pgxpool.Pool, orgs *org.Service, q *queue.Client) *Service {
-	return &Service{pool: pool, orgs: orgs, queue: q}
+func New(pool *pgxpool.Pool, orgs *org.Service, q *queue.Client, events *live.Hub, authSvc *auth.Service) *Service {
+	return &Service{pool: pool, orgs: orgs, queue: q, events: events, auth: authSvc}
 }
 
 type createRequest struct {
@@ -160,21 +163,14 @@ func (s *Service) Cancel(w http.ResponseWriter, r *http.Request) {
 	}
 	_, _ = s.pool.Exec(r.Context(), `UPDATE scans SET status='CANCELLED', finished_at=now() WHERE id=$1 AND status IN ('QUEUED','PREPARING','RUNNING')`, sc.ID)
 	sc.Status = "CANCELLED"
+	s.notify(r.Context(), sc.ID, "scan")
 	httputil.JSON(w, http.StatusOK, sc)
 }
 
 func (s *Service) loadAuthorized(r *http.Request) (Scan, error) {
 	userID := auth.UserID(r.Context())
 	scanID := chi.URLParam(r, "scanID")
-	var sc Scan
-	err := s.pool.QueryRow(r.Context(), `
-		SELECT s.id::text, s.project_id::text, s.source_id::text, s.status, s.scanners, s.error_message, s.started_at, s.finished_at, s.created_at,
-			(SELECT COUNT(*) FROM findings f WHERE f.scan_id=s.id),
-			src.kind, src.version_label, src.github_repo, src.local_path
-		FROM scans s
-		JOIN project_sources src ON src.id = s.source_id
-		WHERE s.id=$1
-	`, scanID).Scan(&sc.ID, &sc.ProjectID, &sc.SourceID, &sc.Status, &sc.Scanners, &sc.ErrorMessage, &sc.StartedAt, &sc.FinishedAt, &sc.CreatedAt, &sc.FindingCount, &sc.SourceKind, &sc.SourceLabel, &sc.GitHubRepo, &sc.LocalPath)
+	sc, err := s.getByID(r.Context(), scanID)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return Scan{}, httputil.ErrNotFound
@@ -222,5 +218,9 @@ func (s *Service) UpdateStatus(ctx context.Context, scanID, status string, errMs
 		    finished_at=CASE WHEN $2 IN ('COMPLETED','FAILED','CANCELLED') THEN now() ELSE finished_at END
 		WHERE id=$1
 	`, scanID, status, errMsg)
-	return err
+	if err != nil {
+		return err
+	}
+	s.notify(ctx, scanID, "scan")
+	return nil
 }

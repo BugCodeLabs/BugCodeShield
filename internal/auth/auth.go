@@ -238,6 +238,18 @@ func UserID(ctx context.Context) string {
 	return v
 }
 
+func WithUserID(ctx context.Context, userID string) context.Context {
+	return context.WithValue(ctx, userIDKey, userID)
+}
+
+func (s *Service) ParseToken(token string) (string, error) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return "", httputil.ErrUnauthorized
+	}
+	return s.parse(token)
+}
+
 func (s *Service) sign(userID string) (string, error) {
 	claims := jwt.MapClaims{
 		"sub": userID,

@@ -11,6 +11,7 @@
 - API and web images run as non-root. The worker must talk to Docker.
 - GitHub and OpenAI tokens in Settings are AES-GCM ciphertext. The UI only shows a hint (`••••abcd`).
 - Scanner logs are sanitized before they are stored for the dashboard.
+- Scan WebSocket auth uses `?token=` (browsers cannot set `Authorization` on `WebSocket`). The HTTP request logger records `path`, not the query string. Do not log `RawQuery` for that route.
 
 ## Risks deferred to later phases
 

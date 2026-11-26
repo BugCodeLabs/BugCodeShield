@@ -3,6 +3,7 @@ package server
 import (
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"bugcode-shield/internal/ai"
@@ -62,6 +63,7 @@ func New(cfg config.Config, logger *slog.Logger, checker *health.Checker, deps D
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Post("/auth/register", deps.Auth.Register)
 		r.Post("/auth/login", deps.Auth.Login)
+		r.Get("/scans/{scanID}/ws", deps.Scans.Stream)
 
 		r.Group(func(r chi.Router) {
 			r.Use(deps.Auth.Middleware)
@@ -109,6 +111,16 @@ func New(cfg config.Config, logger *slog.Logger, checker *health.Checker, deps D
 func requestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+				logger.Info("request",
+					"method", r.Method,
+					"path", r.URL.Path,
+					"upgrade", "websocket",
+					"request_id", middleware.GetReqID(r.Context()),
+				)
+				next.ServeHTTP(w, r)
+				return
+			}
 			start := time.Now()
 			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 			next.ServeHTTP(ww, r)

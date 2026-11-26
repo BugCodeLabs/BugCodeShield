@@ -11,6 +11,32 @@ export function setToken(token: string | null) {
   else window.localStorage.removeItem(TOKEN_KEY);
 }
 
+let cachedWsOrigin: string | null = null;
+
+export async function getWsOrigin(): Promise<string> {
+  if (cachedWsOrigin) return cachedWsOrigin;
+  try {
+    const response = await fetch("/api/runtime", { cache: "no-store" });
+    const data = (await response.json()) as { wsOrigin?: string };
+    if (data.wsOrigin) {
+      cachedWsOrigin = data.wsOrigin;
+      return cachedWsOrigin;
+    }
+  } catch {
+    // Browser talks to the API host directly; the Next.js /backend proxy cannot upgrade WebSockets.
+  }
+  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  cachedWsOrigin = `${proto}//${window.location.hostname}:3001`;
+  return cachedWsOrigin;
+}
+
+export function scanSocketURL(origin: string, scanId: string, token: string) {
+  const base = origin.replace(/\/$/, "");
+  const url = new URL(`${base}/api/v1/scans/${encodeURIComponent(scanId)}/ws`);
+  url.searchParams.set("token", token);
+  return url.toString();
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   if (!(init.body instanceof FormData) && !headers.has("Content-Type")) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { api, getToken, type Finding, type Scan, type ScanLog, type UserSettings } from "@/lib/api";
+import { api, getToken, getWsOrigin, scanSocketURL, type Finding, type Scan, type ScanLog, type UserSettings } from "@/lib/api";
 import { Card, GhostButton, Input, LoadingScreen, SeverityBadge, Spinner } from "@/components/ui";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -46,9 +46,11 @@ export default function ScanIssuesPage() {
   const [exporting, setExporting] = useState("");
   const [aiReady, setAiReady] = useState(false);
   const logEnd = useRef<HTMLDivElement | null>(null);
+  const statusRef = useRef("");
 
   async function load() {
     const sc = await api.get<Scan>(`/api/v1/scans/${params.scanId}`);
+    statusRef.current = sc.status;
     setScan(sc);
     const logRes = await api.get<{ logs: ScanLog[] }>(`/api/v1/scans/${params.scanId}/logs`);
     setLogs(logRes.logs);
@@ -73,24 +75,134 @@ export default function ScanIssuesPage() {
 
   useEffect(() => {
     let stop = false;
-    let timer = 0;
-    async function tick() {
-      if (stop) return;
-      try {
-        const sc = await load();
+    let ws: WebSocket | null = null;
+    let pollTimer = 0;
+    let retryTimer = 0;
+    let fallbackTimer = 0;
+    let attempts = 0;
+    let usingPoll = false;
+    let gotSnapshot = false;
+    statusRef.current = "";
+
+    async function loadFindings() {
+      const res = await api.get<{ findings: Finding[] }>(`/api/v1/scans/${params.scanId}/findings`);
+      if (!stop) setFindings(res.findings);
+    }
+
+    function startPoll() {
+      if (usingPoll || stop) return;
+      usingPoll = true;
+      if (ws) {
+        ws.close();
+        ws = null;
+      }
+      async function tick() {
         if (stop) return;
-        if (!isFinished(sc.status)) {
-          timer = window.setTimeout(tick, 1200);
+        try {
+          const sc = await load();
+          if (!stop && !isFinished(sc.status)) pollTimer = window.setTimeout(tick, 1200);
+        } catch {
+          if (!stop) pollTimer = window.setTimeout(tick, 2000);
         }
+      }
+      tick();
+    }
+
+    function handleMessage(raw: string) {
+      let msg: {
+        type?: string;
+        status?: string;
+        finding_count?: number;
+        error_message?: string;
+        scan?: Scan;
+        logs?: ScanLog[];
+        log?: ScanLog;
+      };
+      try {
+        msg = JSON.parse(raw);
       } catch {
-        if (!stop) timer = window.setTimeout(tick, 2000);
+        return;
+      }
+      if (msg.type === "snapshot") {
+        gotSnapshot = true;
+        if (msg.scan) {
+          statusRef.current = msg.scan.status;
+          setScan(msg.scan);
+        }
+        setLogs(msg.logs || []);
+        if (msg.scan && isFinished(msg.scan.status)) {
+          loadFindings().catch(() => undefined);
+        } else {
+          setFindings([]);
+        }
+        return;
+      }
+      if (msg.type === "log" && msg.log) {
+        setLogs((prev) => [...prev, msg.log!]);
+        return;
+      }
+      if (msg.type === "scan" || msg.type === "done") {
+        if (msg.status) statusRef.current = msg.status;
+        setScan((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            status: msg.status || prev.status,
+            finding_count: msg.finding_count ?? prev.finding_count,
+            error_message: msg.error_message ?? prev.error_message,
+          };
+        });
+        if (isFinished(msg.status) || msg.type === "done") {
+          loadFindings().catch(() => undefined);
+        }
       }
     }
-    tick();
+
+    async function connectWS() {
+      const token = getToken();
+      if (!token) {
+        startPoll();
+        return;
+      }
+      let origin = "";
+      try {
+        origin = await getWsOrigin();
+      } catch {
+        startPoll();
+        return;
+      }
+      if (stop || usingPoll) return;
+      const socket = new WebSocket(scanSocketURL(origin, params.scanId, token));
+      ws = socket;
+      socket.onopen = () => {
+        attempts = 0;
+      };
+      socket.onmessage = (event) => handleMessage(String(event.data));
+      socket.onclose = () => {
+        if (stop || usingPoll) return;
+        if (isFinished(statusRef.current)) return;
+        attempts += 1;
+        if (attempts > 3) {
+          startPoll();
+          return;
+        }
+        retryTimer = window.setTimeout(() => {
+          connectWS().catch(() => startPoll());
+        }, 800 * attempts);
+      };
+    }
+
+    fallbackTimer = window.setTimeout(() => {
+      if (!gotSnapshot && !usingPoll) startPoll();
+    }, 4000);
+    connectWS().catch(() => startPoll());
     api.get<UserSettings>("/api/v1/settings").then((view) => setAiReady(view.openai_api_key_set)).catch(() => undefined);
     return () => {
       stop = true;
-      window.clearTimeout(timer);
+      window.clearTimeout(pollTimer);
+      window.clearTimeout(retryTimer);
+      window.clearTimeout(fallbackTimer);
+      if (ws) ws.close();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.scanId]);

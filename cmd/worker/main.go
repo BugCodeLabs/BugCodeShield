@@ -12,6 +12,7 @@ import (
 	"bugcode-shield/internal/crypto"
 	"bugcode-shield/internal/db"
 	"bugcode-shield/internal/finding"
+	"bugcode-shield/internal/live"
 	"bugcode-shield/internal/org"
 	"bugcode-shield/internal/platform"
 	"bugcode-shield/internal/queue"
@@ -59,9 +60,10 @@ func main() {
 
 	orgs := org.New(clients.Postgres)
 	q := queue.New(cfg.RabbitMQURL())
-	scans := scan.New(clients.Postgres, orgs, q)
+	events := live.New(clients.Redis)
+	scans := scan.New(clients.Postgres, orgs, q, events, nil)
 	findings := finding.New(clients.Postgres, orgs)
-	w := worker.New(clients.Postgres, clients.MinIO, scans, findings, worker.Config{
+	w := worker.New(clients.Postgres, clients.MinIO, scans, findings, events, worker.Config{
 		Workspace:     cfg.ScanWorkspace,
 		HostWorkspace: cfg.ScanHostWorkspace,
 		HostCache:     hostCache,

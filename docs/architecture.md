@@ -7,10 +7,10 @@ BugCode Shield is a Go + Next.js application (Go module `bugcode-shield`, Compos
 | Service | Image / entry | Role |
 | --- | --- | --- |
 | `web` | `apps/web` (Next.js 15) | Landing, auth UI, projects, scan dashboard. Proxies `/backend/*` to the API. |
-| `api` | `cmd/api` | HTTP API, JWT, enqueue scan jobs, serve findings. |
+| `api` | `cmd/api` | HTTP API, JWT, enqueue scan jobs, serve findings, scan WebSocket. |
 | `worker` | `cmd/worker` | Consumes RabbitMQ, prepares source, starts scanner containers, writes findings. |
 | `postgres` | Postgres 16 | System of record. |
-| `redis` | Redis 7 | Cache / future coordination. |
+| `redis` | Redis 7 | Live scan pub/sub (`bugcodeshield:scan-events`) plus health. |
 | `rabbitmq` | RabbitMQ 3.13 | Scan job queue `bugcodeshield.scans`. |
 | `minio` | MinIO | ZIP/object storage for uploaded archives. |
 | `sonarqube` | SonarQube Community Build | Optional quality/SAST engine used by the `sonarqube` scanner. |
@@ -34,6 +34,7 @@ internal/server       Chi routes — the HTTP surface
 internal/auth|org|project|source|scan|finding|ai|settings
                       Domain logic used by API and/or worker
 internal/scanning     docker run + JSON parsers
+internal/live         Redis pub/sub hub for scan WebSockets
 internal/queue|db|config|platform|crypto|health
                       Infrastructure
 apps/web              Next.js UI
@@ -65,6 +66,7 @@ Worker mounts:
 | Login / JWT / profile | `internal/auth` |
 | GitHub / ZIP / local folder | `internal/source` |
 | Enqueue or scan status | `internal/scan` |
+| Live scan WebSocket | `internal/scan/ws.go`, `internal/live` |
 | Semgrep/Trivy/Gitleaks/SonarQube CLI flags | `internal/scanning/runner.go` |
 | Finding JSON shape | `internal/scanning/normalize.go` |
 | AI explain | `internal/ai` + user keys in `internal/settings` |
@@ -75,7 +77,7 @@ Worker mounts:
 ## Auth and tenancy
 
 - Register creates a user and a default organization (`owner`).
-- JWT in `Authorization: Bearer`.
+- JWT in `Authorization: Bearer`. Scan WebSocket uses the same JWT as `?token=` on `GET /api/v1/scans/{id}/ws` (browser cannot set headers on `WebSocket`). Connect to the API port; Next.js `/backend` is fetch-only.
 - Project access goes through `organization_members`.
 - User settings (GitHub token, OpenAI key) are per user, encrypted.
 

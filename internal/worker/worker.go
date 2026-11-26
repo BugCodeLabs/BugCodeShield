@@ -14,6 +14,7 @@ import (
 
 	"bugcode-shield/internal/crypto"
 	"bugcode-shield/internal/finding"
+	"bugcode-shield/internal/live"
 	"bugcode-shield/internal/queue"
 	"bugcode-shield/internal/scan"
 	"bugcode-shield/internal/scanning"
@@ -40,17 +41,19 @@ type Worker struct {
 	minio    *minio.Client
 	scans    *scan.Service
 	findings *finding.Service
+	events   *live.Hub
 	cfg      Config
 	logger   *slog.Logger
 	runner   scanning.Runner
 }
 
-func New(pool *pgxpool.Pool, mc *minio.Client, scans *scan.Service, findings *finding.Service, cfg Config, logger *slog.Logger) *Worker {
+func New(pool *pgxpool.Pool, mc *minio.Client, scans *scan.Service, findings *finding.Service, events *live.Hub, cfg Config, logger *slog.Logger) *Worker {
 	return &Worker{
 		pool:     pool,
 		minio:    mc,
 		scans:    scans,
 		findings: findings,
+		events:   events,
 		cfg:      cfg,
 		logger:   logger,
 		runner: scanning.Runner{
@@ -265,6 +268,9 @@ func (w *Worker) log(ctx context.Context, scanID, scanner, level, message string
 		scannerArg = scanner
 	}
 	_, _ = w.pool.Exec(ctx, `INSERT INTO scan_logs (scan_id, scanner, level, message) VALUES ($1,$2,$3,$4)`, scanID, scannerArg, level, message)
+	if w.events != nil {
+		w.events.Publish(ctx, live.Event{Type: "log", ScanID: scanID})
+	}
 }
 
 func (w *Worker) Logs(ctx context.Context, scanID string) ([]map[string]any, error) {

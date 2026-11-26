@@ -32,7 +32,7 @@ What you should see on screen:
 | 2 | `/app` | New project name (and optional description) | The project card appears; click it |
 | 3 | `/app/projects/:id` | Add source: folder, ZIP, or GitHub | The selected location is shown |
 | 4 | Same page | Tick Semgrep / Trivy / Gitleaks (SonarQube and Dependency-Check are optional) | **Start scan** is enabled |
-| 5 | `/app/projects/:id/scans/:scanId` | Wait | Live log fills; status is `COMPLETED` |
+| 5 | `/app/projects/:id/scans/:scanId` | Wait | Live log fills over WebSocket; status is `COMPLETED` |
 | 6 | Same page | Open an issue | File, line, and snippet appear |
 
 ## 1. Create an account

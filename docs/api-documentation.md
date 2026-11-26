@@ -2,7 +2,7 @@
 
 Base path: `/api/v1`. The web app calls these as `/backend/api/v1/...`.
 
-All product routes need `Authorization: Bearer <jwt>` except **register**, **login**, and **health**.
+All product routes need `Authorization: Bearer <jwt>` except **register**, **login**, **health**, and the scan WebSocket (JWT as `?token=` because browsers cannot set `Authorization` on `WebSocket`).
 
 Health (no `/api/v1` prefix): `GET /health/live`, `GET /health`, `GET /health/ready`.
 
@@ -55,8 +55,9 @@ Local connect may respond with `status: "choose"` and `matches` when several fol
 | POST | `/api/v1/projects/{projectID}/scans` | `{source_id, scanners}` → `202` + scan (`QUEUED`) |
 | GET | `/api/v1/projects/{projectID}/scans` | History |
 | GET | `/api/v1/scans/{scanID}` | Status, source label, finding_count |
+| GET | `/api/v1/scans/{scanID}/ws` | WebSocket live status + logs (`?token=<jwt>`). Connect to the API host (`:3001`), not `/backend`. |
 | POST | `/api/v1/scans/{scanID}/cancel` | Cancel if still running |
-| GET | `/api/v1/scans/{scanID}/logs` | Live scanner logs |
+| GET | `/api/v1/scans/{scanID}/logs` | Scanner logs (REST fallback) |
 | GET | `/api/v1/scans/{scanID}/findings` | Filters: `severity`, `scanner`, `file`, `q` |
 | GET | `/api/v1/scans/{scanID}/export.json` | JSON export |
 | GET | `/api/v1/scans/{scanID}/export.sarif` | SARIF export |
