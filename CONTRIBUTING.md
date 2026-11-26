@@ -77,7 +77,7 @@ Then run a scan from the UI and confirm logs then findings.
 1. Image + `docker run` args in `internal/scanning/runner.go` (`commandFor`).
 2. Parser in `internal/scanning/normalize.go` producing `finding.Finding`.
 3. Allow the name in `internal/scan` `allowedScanners` and the web checkbox list.
-4. Skip caches (`node_modules`, `.pnpm-store`, `.git`, …).
+4. Skip generated trees in `internal/source/skip.go` (all languages: `node_modules`, `vendor`, `target`, `.venv`, `.git`, …). Do not add a Node-only ignore list in the scanner command.
 5. Document it in `docs/scanner-integration.md`.
 6. Do not run the tool on the host; keep `docker run` isolation.
 

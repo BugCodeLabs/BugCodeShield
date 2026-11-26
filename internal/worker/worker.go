@@ -125,6 +125,9 @@ func (w *Worker) Handle(ctx context.Context, job queue.ScanJob) error {
 	if hostSrc == "" {
 		hostSrc = filepath.Join(w.cfg.HostWorkspace, job.ScanID, "src")
 	}
+	if skipped := source.FindSkipDirRelPaths(hostSrc); len(skipped) > 0 {
+		w.log(ctx, job.ScanID, "", "info", fmt.Sprintf("Excluding %d generated directories (node_modules, vendor, target, dist, .venv, .git, …) across all languages", len(skipped)))
+	}
 	hostOut := filepath.Join(w.cfg.HostWorkspace, job.ScanID, "out")
 
 	total := 0

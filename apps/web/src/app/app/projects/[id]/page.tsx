@@ -31,6 +31,10 @@ function sourceUrl(src: Source) {
   return src.version_label;
 }
 
+function isScanRunning(status?: string) {
+  return status === "QUEUED" || status === "PREPARING" || status === "RUNNING";
+}
+
 type PickedFolder = { name: string; path?: string; children: string[] };
 
 function folderFromFiles(files: FileList): PickedFolder {
@@ -83,20 +87,47 @@ export default function ProjectPage() {
   const [savedGitHub, setSavedGitHub] = useState<UserSettings | null>(null);
   const folderPickedRef = useRef(false);
 
-  async function load() {
+  async function loadProject() {
     const p = await api.get<Project>(`/api/v1/projects/${projectId}`);
     setProject(p);
+  }
+
+  async function loadScans() {
     const sc = await api.get<{ scans: Scan[] }>(`/api/v1/projects/${projectId}/scans`);
     setScans(sc.scans);
+    return sc.scans;
+  }
+
+  async function load() {
+    await loadProject();
+    return loadScans();
   }
 
   useEffect(() => {
-    load().catch((err: Error) => setError(err.message));
+    let stop = false;
+    let timer = 0;
+
+    async function refresh(initial: boolean) {
+      try {
+        if (initial) await loadProject();
+        const list = await loadScans();
+        if (stop) return;
+        if (list.some((scan) => isScanRunning(scan.status))) {
+          timer = window.setTimeout(() => refresh(false), 4000);
+        }
+      } catch (err) {
+        if (stop) return;
+        if (initial && err instanceof Error) setError(err.message);
+        if (!initial) timer = window.setTimeout(() => refresh(false), 8000);
+      }
+    }
+
+    refresh(true);
     api.get<UserSettings>("/api/v1/settings").then(setSavedGitHub).catch(() => undefined);
-    const timer = window.setInterval(() => {
-      load().catch(() => undefined);
-    }, 4000);
-    return () => window.clearInterval(timer);
+    return () => {
+      stop = true;
+      window.clearTimeout(timer);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 

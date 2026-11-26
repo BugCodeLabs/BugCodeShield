@@ -10,6 +10,7 @@ The worker starts each scanner with `docker run`:
 - `no-new-privileges`
 - Dedicated `scanners` network (egress for rule/CVE databases, no Postgres/MinIO/Redis)
 - Trivy stores its vulnerability DB in `data/cache` on the host so scans are not limited by tmpfs size
+- Generated trees are excluded for **every language** this product scans, not only Node.js. The list lives in `internal/source/skip.go` (`node_modules`, `vendor`, `target`, `.venv`, `dist`, `.git`, `.nx`, `.next`, `.turbo`, `.cache`, `coverage`, `bin`/`obj`, …). ZIP extract, file counts, Semgrep/Trivy/Gitleaks/SonarQube/Dependency-Check flags, and empty Docker overlays on those folders all use that list so scanners never read dependency or build output.
 
 Scanner containers never receive the Docker socket. GitHub tokens are used only for `git clone` in the worker and are not passed into scanner environment variables. Gitleaks secrets are redacted before they reach the dashboard.
 

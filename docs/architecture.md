@@ -65,6 +65,7 @@ Worker mounts:
 | New HTTP route | `internal/server/server.go` + the domain `Service` |
 | Login / JWT / profile | `internal/auth` |
 | GitHub / ZIP / local folder | `internal/source` |
+| Skip generated dirs during scan | `internal/source/skip.go` |
 | Enqueue or scan status | `internal/scan` |
 | Live scan WebSocket | `internal/scan/ws.go`, `internal/live` |
 | Semgrep/Trivy/Gitleaks/SonarQube CLI flags | `internal/scanning/runner.go` |

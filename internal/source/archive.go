@@ -18,23 +18,6 @@ const (
 	MaxFileCount         = 40000
 )
 
-var skipPrefixes = []string{
-	"node_modules/",
-	".next/",
-	"dist/",
-	"build/",
-	"__MACOSX/",
-	".git/",
-	"vendor/",
-	"target/",
-	".venv/",
-	"venv/",
-	"coverage/",
-	".idea/",
-	".vscode/",
-	"__pycache__/",
-}
-
 func SafeExtractZipFile(zipPath, dest string) (int, error) {
 	zr, err := zip.OpenReader(zipPath)
 	if err != nil {
@@ -159,18 +142,6 @@ func ifDir(isDir bool, suffix string) string {
 		return suffix
 	}
 	return ""
-}
-
-func shouldSkip(name string) bool {
-	n := strings.ToLower(strings.TrimPrefix(filepath.ToSlash(name), "./"))
-	for _, part := range strings.Split(n, "/") {
-		for _, prefix := range skipPrefixes {
-			if part == strings.TrimSuffix(prefix, "/") {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 func safeJoin(root, name string) (string, error) {

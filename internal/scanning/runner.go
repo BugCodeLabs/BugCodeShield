@@ -6,11 +6,14 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
 	"time"
+
+	"bugcode-shield/internal/source"
 )
 
 type RunResult struct {
@@ -51,7 +54,7 @@ func (r *Runner) Run(ctx context.Context, scanner, scanID, hostSrc, hostOut, loc
 	_ = os.Chmod(localOut, 0o777)
 
 	if scanner == "gitleaks" {
-		_ = os.WriteFile(filepath.Join(localOut, "gitleaks.toml"), []byte(gitleaksConfig), 0o644)
+		_ = os.WriteFile(filepath.Join(localOut, "gitleaks.toml"), []byte(gitleaksConfig()), 0o644)
 	}
 
 	image, args := commandFor(scanner, scanID)
@@ -82,6 +85,7 @@ func (r *Runner) Run(ctx context.Context, scanner, scanID, hostSrc, hostOut, loc
 		"-v", hostSrc + ":/src:ro",
 		"-v", hostOut + ":/out",
 	}
+	dockerArgs = append(dockerArgs, skipDirVolumeArgs(hostSrc)...)
 	if scanner == "trivy" && r.HostCache != "" {
 		dockerArgs = append(dockerArgs,
 			"-e", "TRIVY_CACHE_DIR=/cache",
@@ -159,7 +163,7 @@ func ensureImage(ctx context.Context, image string) {
 func commandFor(scanner, scanID string) (image string, args []string) {
 	switch scanner {
 	case "semgrep":
-		return "semgrep/semgrep:1.97.0", []string{
+		args := []string{
 			"semgrep", "scan",
 			"--metrics", "off",
 			"--disable-version-check",
@@ -174,33 +178,17 @@ func commandFor(scanner, scanID string) (image string, args []string) {
 			"--config", "p/java",
 			"--config", "p/php",
 			"--config", "p/nodejs",
-			"--exclude", "node_modules",
-			"--exclude", ".git",
-			"--exclude", "dist",
-			"--exclude", "build",
-			"--exclude", "vendor",
-			"--exclude", ".next",
-			"--exclude", "coverage",
-			"--exclude", "target",
-			"--json",
-			"--output", "/out/semgrep.json",
-			"/src",
 		}
+		args = appendNamedSkipFlags(args, "--exclude")
+		args = append(args, "--json", "--output", "/out/semgrep.json", "/src")
+		return "semgrep/semgrep:1.97.0", args
 	case "trivy":
-		return "aquasec/trivy:0.58.1", []string{
-			"fs",
-			"--scanners", "vuln,misconfig,secret",
-			"--skip-dirs", "node_modules",
-			"--skip-dirs", ".git",
-			"--skip-dirs", "dist",
-			"--skip-dirs", "build",
-			"--skip-dirs", "vendor",
-			"--skip-dirs", ".next",
-			"--quiet",
-			"--format", "json",
-			"--output", "/out/trivy.json",
-			"/src",
+		args := []string{"fs", "--scanners", "vuln,misconfig,secret"}
+		for _, name := range source.SkipDirNames {
+			args = append(args, "--skip-dirs", name, "--skip-dirs", "**/"+name)
 		}
+		args = append(args, "--quiet", "--format", "json", "--output", "/out/trivy.json", "/src")
+		return "aquasec/trivy:0.58.1", args
 	case "gitleaks":
 		return "zricethezav/gitleaks:v8.21.2", []string{
 			"detect",
@@ -211,7 +199,11 @@ func commandFor(scanner, scanID string) (image string, args []string) {
 			"--report-path", "/out/gitleaks.json",
 		}
 	case "dependency-check":
-		return "owasp/dependency-check:12.1.0", []string{"--scan", "/src", "--format", "JSON", "--out", "/out", "--noupdate", "--exclude", "**/node_modules/**", "--exclude", "**/.git/**"}
+		args := []string{"--scan", "/src", "--format", "JSON", "--out", "/out", "--noupdate"}
+		for _, glob := range source.SkipGlobs() {
+			args = append(args, "--exclude", glob)
+		}
+		return "owasp/dependency-check:12.1.0", args
 	case "sonarqube":
 		key := sonarProjectKey(scanID)
 		return sonarScannerImage, []string{
@@ -224,35 +216,61 @@ func commandFor(scanner, scanID string) (image string, args []string) {
 			"-Dsonar.qualitygate.wait=false",
 			"-Dsonar.javascript.node.maxspace=4096",
 			"-Dsonar.scanner.metadataFilePath=/out/report-task.txt",
-			"-Dsonar.exclusions=**/node_modules/**,**/.git/**,**/dist/**,**/build/**,**/vendor/**,**/.next/**,**/coverage/**,**/target/**,**/__pycache__/**,**/venv/**,**/.venv/**,**/.nx/**,**/tmp/**,**/.husky/**,**/*.min.js,**/*.spec.ts,**/*.spec.tsx,**/*.spec.js,**/*.test.ts,**/*.test.tsx,**/*.test.js,**/*-e2e/**,**/e2e/**",
+			"-Dsonar.exclusions=" + sonarExclusions(),
 			"-Dsonar.test.inclusions=**/*.spec.ts,**/*.spec.tsx,**/*.spec.js,**/*.test.ts,**/*.test.tsx,**/*.test.js,**/*-e2e/**,**/e2e/**",
-			"-Dsonar.test.exclusions=**/node_modules/**,**/.git/**,**/dist/**",
+			"-Dsonar.test.exclusions=" + strings.Join(source.SkipGlobs(), ","),
 		}
 	default:
 		return "", nil
 	}
 }
 
-const gitleaksConfig = `title = "BugCode Shield"
+func skipDirVolumeArgs(hostSrc string) []string {
+	dirs := source.FindSkipDirRelPaths(hostSrc)
+	if len(dirs) == 0 {
+		return nil
+	}
+	args := make([]string, 0, len(dirs)*2)
+	for _, rel := range dirs {
+		args = append(args, "-v", path.Join("/src", rel))
+	}
+	return args
+}
 
-[extend]
-useDefault = true
+func appendNamedSkipFlags(args []string, flag string) []string {
+	for _, name := range source.SkipDirNames {
+		args = append(args, flag, name)
+	}
+	return args
+}
 
-[allowlist]
-paths = [
-  '''(^|/)node_modules/''',
-  '''(^|/)\.git/''',
-  '''(^|/)vendor/''',
-  '''(^|/)dist/''',
-  '''(^|/)build/''',
-  '''(^|/)\.next/''',
-  '''(^|/)coverage/''',
-  '''(^|/)target/''',
-  '''(^|/)__pycache__/''',
-  '''(^|/)venv/''',
-  '''(^|/)\.venv/''',
-]
-`
+func sonarExclusions() string {
+	extra := []string{
+		"**/.husky/**",
+		"**/*.min.js",
+		"**/*.spec.ts",
+		"**/*.spec.tsx",
+		"**/*.spec.js",
+		"**/*.test.ts",
+		"**/*.test.tsx",
+		"**/*.test.js",
+		"**/*-e2e/**",
+		"**/e2e/**",
+	}
+	return strings.Join(append(source.SkipGlobs(), extra...), ",")
+}
+
+func gitleaksConfig() string {
+	var b strings.Builder
+	b.WriteString("title = \"BugCode Shield\"\n\n[extend]\nuseDefault = true\n\n[allowlist]\npaths = [\n")
+	for _, name := range source.SkipDirNames {
+		b.WriteString("  '''(^|/)")
+		b.WriteString(regexp.QuoteMeta(name))
+		b.WriteString("/''',\n")
+	}
+	b.WriteString("]\n")
+	return b.String()
+}
 
 func outputFile(outDir, scanner string) string {
 	switch scanner {
